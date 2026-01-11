@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { HERO_CATALOG } from "@/app/lib/heroes/catalog";
+import { HERO_CATALOG } from "@/app/api/heroes/catalog";
 import { Rarity, SquadType } from "@/app/api/heroes/schema";
 
 export function GET(req: Request) {
