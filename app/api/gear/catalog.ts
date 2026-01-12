@@ -172,16 +172,15 @@ const CATALOG: GearCatalog = {
     // RADAR
     // -----------------------
     {
-      id: "radar_m3_radar",
-      name: "M3 Radar",
-      slot: "radar",
-      rarity: "SR",
-      basePower: 0,
-      baseStats: {},
-      baseEffects: [],
-      milestones: [],
-      notes: "You didn’t provide SR radar stats yet; placeholder with basePower 0.",
-    },
+  id: "radar_m3_radar",
+  name: "M3 Radar",
+  slot: "radar",
+  rarity: "SR",
+  basePower: 520,
+  baseStats: { heroAtk: 41 },
+  baseEffects: [],
+  milestones: [],
+},
     {
       id: "radar_m4a_seahawk_radar",
       name: `M4-A "Seahawk" Radar`,
