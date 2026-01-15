@@ -3,11 +3,8 @@ import { GearCatalogSchema, type GearCatalog } from "./schema";
 const CATALOG: GearCatalog = {
   version: "2026-01-10",
   slots: ["weapon", "armor", "dataChip", "radar"],
-
   items: [
-    // -----------------------
     // WEAPONS
-    // -----------------------
     {
       id: "weapon_m3_turret",
       name: "M3 Turret",
@@ -17,7 +14,6 @@ const CATALOG: GearCatalog = {
       baseStats: { heroAtk: 62, heroDef: 10 },
       baseEffects: [],
       milestones: [],
-      notes: "SR weapon (per your notes).",
     },
     {
       id: "weapon_m4a_destroyer_cannon",
@@ -32,7 +28,6 @@ const CATALOG: GearCatalog = {
         { level: 20, effectsAdd: [{ type: "pctDamageToMonsters", value: 0.02 }], statAdds: {} },
         { level: 30, effectsAdd: [{ type: "pctDamageToMonsters", value: 0.02 }], statAdds: {} },
       ],
-      notes: "Monster damage increments at 10/20/30 per your notes.",
     },
     {
       id: "weapon_m5a_thor_railgun",
@@ -58,12 +53,9 @@ const CATALOG: GearCatalog = {
           { name: "Mythical Blueprints", maxStars: 5 },
         ],
       },
-      notes: "After level 40 requires Legendary then Mythical blueprints to star up (per your notes).",
     },
 
-    // -----------------------
     // ARMOR
-    // -----------------------
     {
       id: "armor_m3_armor",
       name: "M3 Armor",
@@ -101,9 +93,9 @@ const CATALOG: GearCatalog = {
       ],
       milestones: [
         { level: 10, statAdds: { heroHp: 21000 }, effectsAdd: [] },
-        { level: 20, statAdds: {}, effectsAdd: [{ type: "pctPhysicalDamageResistance", value: 0.10 }] },
+        { level: 20, statAdds: {}, effectsAdd: [{ type: "pctPhysicalDamageResistance", value: 0.1 }] },
         { level: 30, statAdds: { heroHp: 21000 }, effectsAdd: [] },
-        { level: 40, statAdds: {}, effectsAdd: [{ type: "pctPhysicalDamageReduction", value: 0.10 }] },
+        { level: 40, statAdds: {}, effectsAdd: [{ type: "pctPhysicalDamageReduction", value: 0.1 }] },
       ],
       blueprintRule: {
         afterLevel: 40,
@@ -112,12 +104,9 @@ const CATALOG: GearCatalog = {
           { name: "Mythical Blueprints", maxStars: 5 },
         ],
       },
-      notes: "You listed both 'resistance' and 'reduction' at different milestones; stored as separate effect types.",
     },
 
-    // -----------------------
     // DATA CHIP
-    // -----------------------
     {
       id: "chip_m3_data_chip",
       name: "M3 Data Chip",
@@ -168,19 +157,17 @@ const CATALOG: GearCatalog = {
       },
     },
 
-    // -----------------------
     // RADAR
-    // -----------------------
     {
-  id: "radar_m3_radar",
-  name: "M3 Radar",
-  slot: "radar",
-  rarity: "SR",
-  basePower: 520,
-  baseStats: { heroAtk: 41 },
-  baseEffects: [],
-  milestones: [],
-},
+      id: "radar_m3_radar",
+      name: "M3 Radar",
+      slot: "radar",
+      rarity: "SR",
+      basePower: 520,
+      baseStats: { heroAtk: 41 },
+      baseEffects: [],
+      milestones: [],
+    },
     {
       id: "radar_m4a_seahawk_radar",
       name: `M4-A "Seahawk" Radar`,
@@ -208,9 +195,9 @@ const CATALOG: GearCatalog = {
       ],
       milestones: [
         { level: 10, statAdds: { heroDef: 100 }, effectsAdd: [] },
-        { level: 20, statAdds: {}, effectsAdd: [{ type: "pctEnergyDamageResistance", value: 0.10 }] },
+        { level: 20, statAdds: {}, effectsAdd: [{ type: "pctEnergyDamageResistance", value: 0.1 }] },
         { level: 30, statAdds: { heroDef: 100 }, effectsAdd: [] },
-        { level: 40, statAdds: {}, effectsAdd: [{ type: "pctEnergyDamageResistance", value: 0.10 }] },
+        { level: 40, statAdds: {}, effectsAdd: [{ type: "pctEnergyDamageResistance", value: 0.1 }] },
       ],
       blueprintRule: {
         afterLevel: 40,
@@ -224,4 +211,3 @@ const CATALOG: GearCatalog = {
 };
 
 export const GEAR_CATALOG = GearCatalogSchema.parse(CATALOG);
-export const GEAR_ITEMS = GEAR_CATALOG.items;
