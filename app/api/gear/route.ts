@@ -21,23 +21,8 @@ export function GET(req: Request) {
   if (slotParsed?.success) items = items.filter(i => i.slot === slotParsed.data);
   if (rarityParsed?.success) items = items.filter(i => i.rarity === rarityParsed.data);
 
-  // summary response (fast)
-  const summary = items.map(i => ({
-    id: i.id,
-    name: i.name,
-    slot: i.slot,
-    rarity: i.rarity,
-    basePower: i.basePower,
-    baseStats: i.baseStats,
-    baseEffects: i.baseEffects,
-    milestones: i.milestones,
-    blueprintRule: i.blueprintRule ?? null,
-    notes: i.notes ?? null,
-  }));
-
   return NextResponse.json(
-    { version: GEAR_CATALOG.version, slots: GEAR_CATALOG.slots, items: summary },
+    { version: GEAR_CATALOG.version, slots: GEAR_CATALOG.slots, items },
     { headers: { "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400" } }
   );
 }
-
