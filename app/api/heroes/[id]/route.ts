@@ -6,7 +6,7 @@ import { HERO_CATALOG } from "../catalog";
 export async function GET(_req: NextRequest, ctx: RouteContext<"/api/heroes/[id]">) {
   const { id } = await ctx.params; // <-- params is async in newer Next builds
 
-  const hero = HEROES_CATALOG.heroes.find((h) => h.id === id.toLowerCase());
+  const hero = HERO_CATALOG.heroes.find((h) => h.id === id.toLowerCase());
 
   if (!hero) {
     return NextResponse.json({ error: "Hero not found", id }, { status: 404 });
