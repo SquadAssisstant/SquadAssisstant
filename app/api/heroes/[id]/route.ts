@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 // adjust this import if your catalog lives elsewhere
-import { HEROES_CATALOG } from "../catalog";
+import { HERO_CATALOG } from "../catalog";
 
 export async function GET(_req: NextRequest, ctx: RouteContext<"/api/heroes/[id]">) {
   const { id } = await ctx.params; // <-- params is async in newer Next builds
