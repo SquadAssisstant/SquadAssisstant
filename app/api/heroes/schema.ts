@@ -77,3 +77,5 @@ export const HeroCatalogSchema = z.object({
   heroes: z.array(HeroSchema),
 });
 
+
+export type HeroCatalog = z.infer<typeof HeroCatalogSchema>;
