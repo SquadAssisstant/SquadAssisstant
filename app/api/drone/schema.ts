@@ -9,6 +9,11 @@ export const ModifierKey = z.enum([
   "pctReduceCritTakenChance",
   "pctSkillDamage",
   "pctChipSkillBoost",
+  "pctHeroHp",
+  "pctHeroAtk",
+  "pctHeroDef",
+]);
+
 
   // “Affects heroes + gorilla” is captured as scope, not as separate stat keys.
 ]);
