@@ -1,125 +1,71 @@
-import { z } from "zod";
+import { GorillaCatalogSchema, type GorillaCatalog } from "./schema";
 
-/**
- * Gorilla Overlord – Truths Schema
- * Pure definitions only.
- * No player state, no scaling math.
- */
+const CATALOG: GorillaCatalog = {
+  version: "2026-01-13",
 
-/* ----------------------------- */
-/* Core stat keys                */
-/* ----------------------------- */
+  unlock: {
+    season: 3,
+    timingNote: "Unlocked end of Season 2 / beginning of Season 3 (server progression dependent).",
+  },
 
-export const OverlordStatKey = z.enum(["hp", "atk", "def"]);
-export type OverlordStatKey = z.infer<typeof OverlordStatKey>;
+  baseAttributes: ["hp", "def", "atk"],
 
-/* ----------------------------- */
-/* Unlock / availability         */
-/* ----------------------------- */
+  assignment: {
+    maxSquadsAttached: 1,
+    movableBetweenSquads: true,
+    effectsOnlyApplyToAttachedSquad: true,
+  },
 
-export const OverlordUnlockSchema = z.object({
-  season: z.number().int().positive(),
-  timingNote: z.string().optional(),
-}).strict();
+  deployRequirements: {
+    requiresAllTrainingAtLeast: 100,
+    attributes: ["hp", "def", "atk"],
+    note: "Each of HP/DEF/ATK training must reach level 100 before Gorilla can be deployed with a squad.",
+  },
 
-/* ----------------------------- */
-/* Squad assignment rules        */
-/* ----------------------------- */
+  training: {
+    attributes: ["hp", "def", "atk"],
+    resources: ["trainingCertificates", "trainingGuidebooks"],
+    notes: "Training increases Gorilla stats. Some levels require Training Certificates.",
+  },
 
-export const OverlordAssignmentSchema = z.object({
-  maxSquadsAttached: z.number().int().positive(),
-  movableBetweenSquads: z.boolean(),
-  effectsOnlyApplyToAttachedSquad: z.boolean(),
-}).strict();
+  bond: {
+    resources: ["bondBadges"],
+    tiers: [
+      { name: "New Partner", stagesPerTier: 10 },
+      { name: "Rookie Partner", stagesPerTier: 10 },
+      { name: "Trusted Friend", stagesPerTier: 10 },
+      { name: "Reliable Partner", stagesPerTier: 10 },
+      { name: "Loyal Friend", stagesPerTier: 10 },
+      { name: "Bonded Partner", stagesPerTier: 10 },
+      { name: "Perfect Sync", stagesPerTier: 10, note: "UI shows up to Perfect Sync for you; may extend later." },
+    ],
+    gatingNote:
+      "Bond upgrades require Bond Badges and minimum training thresholds for HP/DEF/ATK before advancing tiers/stages.",
+  },
 
-/* ----------------------------- */
-/* Training (HP / ATK / DEF)     */
-/* ----------------------------- */
+  promotion: {
+    resources: ["overlordShards"],
+    visibleLevelsNote: "You can see 60 promotion levels; may extend later.",
+    stageEveryNLevels: 10,
+    notes: "Promotion increases stats and unlocks/advances skills.",
+  },
 
-export const OverlordTrainingSchema = z.object({
-  attributes: z.array(OverlordStatKey).min(1),
-  resources: z.array(z.string()).min(1),
-  notes: z.string().optional(),
-}).strict();
+  skills: {
+    resources: ["overlordSkillBadges"],
+    totalSkillSlots: 5,
+    list: [
+      { id: "brutal_roar", name: "Brutal Roar", scalable: true, unlock: { note: "Basic skill" } },
+      { id: "overlords_armor", name: "Overlord's Armor", scalable: true, unlock: { note: "Basic skill" } },
+      { id: "riot_shot", name: "Riot Shot", scalable: true, unlock: { note: "Basic skill" } },
+      { id: "furious_hunt", name: "Furious Hunt", scalable: true, unlock: { note: "Unlocks later; you have it unlocked." } },
+      { id: "expert_overlord", name: "Expert Overlord", scalable: false, unlock: { note: "Promotion-based unlock (exact level to confirm)." } },
+    ],
+    notes:
+      "Skills are scalable like hero skills; Expert Overlord is treated as a single unlock once obtained (pending confirmation).",
+  },
 
-export const OverlordDeployRequirementsSchema = z.object({
-  requiresAllTrainingAtLeast: z.number().int().positive(),
-  attributes: z.array(OverlordStatKey).min(1),
-  note: z.string().optional(),
-}).strict();
+  notes:
+    "Overlord effects apply only to the attached squad. Drone component hero buffs can apply to gorilla only when gorilla is unlocked/usable (enforced later in compute).",
+};
 
-/* ----------------------------- */
-/* Bond / relationship system    */
-/* ----------------------------- */
-
-export const OverlordBondTierSchema = z.object({
-  name: z.string().min(1),
-  stagesPerTier: z.number().int().positive(),
-  note: z.string().optional(),
-}).strict();
-
-export const OverlordBondSchema = z.object({
-  resources: z.array(z.string()).min(1),
-  tiers: z.array(OverlordBondTierSchema).min(1),
-  gatingNote: z.string().optional(),
-}).strict();
-
-/* ----------------------------- */
-/* Promotion system              */
-/* ----------------------------- */
-
-export const OverlordPromotionSchema = z.object({
-  resources: z.array(z.string()).min(1),
-  visibleLevelsNote: z.string().optional(),
-  stageEveryNLevels: z.number().int().positive(),
-  notes: z.string().optional(),
-}).strict();
-
-/* ----------------------------- */
-/* Skills                        */
-/* ----------------------------- */
-
-export const OverlordSkillSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  scalable: z.boolean(),
-  unlock: z.object({
-    note: z.string().optional(),
-  }).strict(),
-}).strict();
-
-export const OverlordSkillsSchema = z.object({
-  resources: z.array(z.string()).min(1),
-  totalSkillSlots: z.number().int().positive(),
-  list: z.array(OverlordSkillSchema).min(1),
-  notes: z.string().optional(),
-}).strict();
-
-/* ----------------------------- */
-/* Root catalog schema           */
-/* ----------------------------- */
-
-export const GorillaCatalogSchema = z.object({
-  version: z.string().min(1),
-
-  unlock: OverlordUnlockSchema,
-
-  baseAttributes: z.array(OverlordStatKey).length(3),
-
-  assignment: OverlordAssignmentSchema,
-
-  deployRequirements: OverlordDeployRequirementsSchema,
-
-  training: OverlordTrainingSchema,
-
-  bond: OverlordBondSchema,
-
-  promotion: OverlordPromotionSchema,
-
-  skills: OverlordSkillsSchema,
-
-  notes: z.string().optional(),
-}).strict();
-
-export type GorillaCatalog = z.infer<typeof GorillaCatalogSchema>;
-
+export const GORILLA_CATALOG = GorillaCatalogSchema.parse(CATALOG);
