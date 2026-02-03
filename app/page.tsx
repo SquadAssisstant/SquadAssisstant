@@ -8,7 +8,8 @@ type SquadSlot = 1 | 2 | 3 | 4;
 type SquadState = {
   slot: SquadSlot;
   name: string;
-  heroIds: string[]; // later: from player profile state
+  heroIds: string[]; // 5 heroes
+  overlordId?: string | null; // optional, null = not assigned
 };
 
 function cn(...classes: (string | false | null | undefined)[]) {
@@ -140,7 +141,6 @@ function HeroThumb({ id }: { id: string }) {
         alt={id}
         className="h-full w-full object-cover"
         onError={(e) => {
-          // fallback to a “badge” look if you don't have images yet
           const img = e.currentTarget;
           img.style.display = "none";
           const parent = img.parentElement;
@@ -156,6 +156,49 @@ function HeroThumb({ id }: { id: string }) {
       />
       <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80">
         {id}
+      </div>
+    </div>
+  );
+}
+
+function OverlordSlot({ overlordId }: { overlordId?: string | null }) {
+  // (Optional later) Put images in: public/overlord/<id>.png
+  // For now it stays empty unless assigned.
+  const src = overlordId ? `/overlord/${overlordId}.png` : null;
+
+  return (
+    <div className="w-[140px]">
+      <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
+        overlord
+      </div>
+      <div
+        className={cn(
+          "mt-2 relative aspect-square overflow-hidden rounded-2xl",
+          "border border-slate-700/50 bg-black/35",
+          "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
+        )}
+        title={overlordId ? overlordId : "No overlord assigned"}
+      >
+        {src ? (
+          <img
+            src={src}
+            alt={overlordId ?? "overlord"}
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              // If no image exists, just show a label fallback.
+              const img = e.currentTarget;
+              img.style.display = "none";
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-widest text-slate-400/70">
+            empty
+          </div>
+        )}
+
+        <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80">
+          Overlord
+        </div>
       </div>
     </div>
   );
@@ -217,11 +260,20 @@ function SquadFolderModal({
           </div>
 
           {/* Content */}
-          <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_240px]">
+          <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_260px]">
             {/* Hero grid */}
             <div>
-              <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-                heroes in this squad
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
+                    heroes in this squad
+                  </div>
+                  <div className="mt-1 text-xs text-slate-300/70">
+                    {squad.heroIds.length} / 5 heroes
+                  </div>
+                </div>
+
+                <OverlordSlot overlordId={squad.overlordId} />
               </div>
 
               <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
@@ -282,7 +334,8 @@ function SquadFolderModal({
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-slate-800/60 px-5 py-4">
             <div className="text-xs text-slate-400/80">
-              Tip: Add hero images to <code className="text-slate-300/80">public/heroes/&lt;id&gt;.png</code>
+              Tip: Add hero images to{" "}
+              <code className="text-slate-300/80">public/heroes/&lt;id&gt;.png</code>
             </div>
             <button
               type="button"
@@ -303,10 +356,30 @@ export default function Home() {
   // Later: replace with player state (localStorage / DB).
   const squads: SquadState[] = useMemo(
     () => [
-      { slot: 1, name: "Squad 1", heroIds: ["kimberly", "murphy", "williams"] },
-      { slot: 2, name: "Squad 2", heroIds: ["dva", "carlie", "lucious"] },
-      { slot: 3, name: "Squad 3", heroIds: ["tesla", "swift", "adam"] },
-      { slot: 4, name: "Squad 4", heroIds: ["mason", "violet", "elsa"] },
+      {
+        slot: 1,
+        name: "Squad 1",
+        heroIds: ["kimberly", "murphy", "williams", "marshall", "stetmann"],
+        overlordId: null,
+      },
+      {
+        slot: 2,
+        name: "Squad 2",
+        heroIds: ["dva", "carlie", "morrison", "lucious", "schuyler"],
+        overlordId: null,
+      },
+      {
+        slot: 3,
+        name: "Squad 3",
+        heroIds: ["tesla", "swift", "mcgregor", "adam", "fiona"],
+        overlordId: null,
+      },
+      {
+        slot: 4,
+        name: "Squad 4",
+        heroIds: ["mason", "violet", "scarlet", "sarah", "elsa"],
+        overlordId: null,
+      },
     ],
     []
   );
@@ -339,19 +412,13 @@ export default function Home() {
       </div>
 
       {/* Modal folder */}
-      <SquadFolderModal
-        squad={activeSquad}
-        open={folderOpen}
-        onClose={() => setFolderOpen(false)}
-      />
+      <SquadFolderModal squad={activeSquad} open={folderOpen} onClose={() => setFolderOpen(false)} />
 
       {/* 3-column layout */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[260px_1fr_260px]">
         {/* Left: squads */}
         <aside className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-            squads
-          </div>
+          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">squads</div>
 
           {squads.map((s) => (
             <AppGroupCard
@@ -370,7 +437,7 @@ export default function Home() {
                 { label: "Hero", emoji: "✈️" },
                 { label: "Gear", emoji: "⚙️" },
                 { label: "Drone", emoji: "🛰️" },
-                { label: "Gorilla", emoji: "🦍" },
+                { label: "Overlord", emoji: "🦍" },
                 { label: "Optimize", emoji: "📈" },
               ]}
             />
@@ -402,9 +469,7 @@ export default function Home() {
 
         {/* Right: tools */}
         <aside className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-            tools
-          </div>
+          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">tools</div>
 
           <AppGroupCard
             title="Heroes Listing"
