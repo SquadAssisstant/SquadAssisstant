@@ -8,9 +8,11 @@ type SquadSlot = 1 | 2 | 3 | 4;
 type SquadState = {
   slot: SquadSlot;
   name: string;
-  heroIds: string[]; // 5 heroes
+  heroIds: (string | null)[]; // 5 slots, empty by default
   overlordId?: string | null; // optional, null = not assigned
 };
+
+type GateKind = "drone" | "overlord";
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -123,10 +125,7 @@ function AppGroupCard({
   return CardInner;
 }
 
-function HeroThumb({ id }: { id: string }) {
-  // Put images in: public/heroes/<id>.png
-  const src = `/heroes/${id}.png`;
-
+function EmptyAddTile({ label }: { label: string }) {
   return (
     <div
       className={cn(
@@ -134,68 +133,33 @@ function HeroThumb({ id }: { id: string }) {
         "border border-slate-700/50 bg-black/40",
         "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
       )}
-      title={id}
+      title={label}
     >
-      <img
-        src={src}
-        alt={id}
-        className="h-full w-full object-cover"
-        onError={(e) => {
-          const img = e.currentTarget;
-          img.style.display = "none";
-          const parent = img.parentElement;
-          if (parent && !parent.querySelector("[data-fallback='1']")) {
-            const div = document.createElement("div");
-            div.setAttribute("data-fallback", "1");
-            div.className =
-              "absolute inset-0 flex items-center justify-center text-center px-2 text-xs tracking-widest text-slate-200/80";
-            div.textContent = id.toUpperCase();
-            parent.appendChild(div);
-          }
-        }}
-      />
-      <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80">
-        {id}
+      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.3em] text-slate-200/70">
+        ADD
+      </div>
+      <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/70">
+        {label}
       </div>
     </div>
   );
 }
 
-function OverlordSlot({ overlordId }: { overlordId?: string | null }) {
-  // (Optional later) Put images in: public/overlord/<id>.png
-  // For now it stays empty unless assigned.
-  const src = overlordId ? `/overlord/${overlordId}.png` : null;
-
+function OverlordSlotLocked() {
   return (
     <div className="w-[140px]">
-      <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-        overlord
-      </div>
+      <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">overlord</div>
       <div
         className={cn(
           "mt-2 relative aspect-square overflow-hidden rounded-2xl",
           "border border-slate-700/50 bg-black/35",
           "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
         )}
-        title={overlordId ? overlordId : "No overlord assigned"}
+        title="Overlord not assigned"
       >
-        {src ? (
-          <img
-            src={src}
-            alt={overlordId ?? "overlord"}
-            className="h-full w-full object-cover"
-            onError={(e) => {
-              // If no image exists, just show a label fallback.
-              const img = e.currentTarget;
-              img.style.display = "none";
-            }}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-widest text-slate-400/70">
-            empty
-          </div>
-        )}
-
+        <div className="absolute inset-0 flex items-center justify-center text-3xl text-slate-300/60">
+          ?
+        </div>
         <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80">
           Overlord
         </div>
@@ -217,7 +181,6 @@ function SquadFolderModal({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* Backdrop */}
       <button
         type="button"
         aria-label="Close"
@@ -225,7 +188,6 @@ function SquadFolderModal({
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
       />
 
-      {/* Modal */}
       <div className="absolute left-1/2 top-16 w-[min(920px,calc(100vw-24px))] -translate-x-1/2">
         <div
           className={cn(
@@ -234,7 +196,6 @@ function SquadFolderModal({
             "overflow-hidden"
           )}
         >
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
             <div className="flex items-baseline gap-3">
               <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">
@@ -243,7 +204,6 @@ function SquadFolderModal({
               <div className="text-xs text-slate-300/70">folder view</div>
             </div>
 
-            {/* X = minimize */}
             <button
               type="button"
               onClick={onClose}
@@ -259,39 +219,32 @@ function SquadFolderModal({
             </button>
           </div>
 
-          {/* Content */}
           <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_260px]">
-            {/* Hero grid */}
             <div>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
                     heroes in this squad
                   </div>
-                  <div className="mt-1 text-xs text-slate-300/70">
-                    {squad.heroIds.length} / 5 heroes
-                  </div>
+                  <div className="mt-1 text-xs text-slate-300/70">5 hero slots</div>
                 </div>
 
-                <OverlordSlot overlordId={squad.overlordId} />
+                <OverlordSlotLocked />
               </div>
 
               <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                {squad.heroIds.map((id) => (
-                  <HeroThumb key={id} id={id} />
+                {squad.heroIds.map((_, idx) => (
+                  <EmptyAddTile key={idx} label={`Hero ${idx + 1}`} />
                 ))}
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-                This folder is squad-scoped. Optimizer here will only reason about this squad’s heroes/gear/drone/gorilla (once player state is wired).
+                These slots populate after user uploads/inputs squad info.
               </div>
             </div>
 
-            {/* Actions */}
             <div className="space-y-3">
-              <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-                actions
-              </div>
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">actions</div>
 
               <a
                 href={`/squads/${squad.slot}/optimizer`}
@@ -303,12 +256,8 @@ function SquadFolderModal({
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-sm tracking-wide text-cyan-200/90">
-                      Squad Optimizer
-                    </div>
-                    <div className="mt-1 text-xs text-slate-300/70">
-                      Scoped to {squad.name}
-                    </div>
+                    <div className="text-sm tracking-wide text-cyan-200/90">Squad Optimizer</div>
+                    <div className="mt-1 text-xs text-slate-300/70">Scoped to {squad.name}</div>
                   </div>
                   <div className="text-lg">📈</div>
                 </div>
@@ -326,16 +275,14 @@ function SquadFolderModal({
               </a>
 
               <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-                Later: quick toggles for drone/gorilla attached to this squad, plus gear presets.
+                Later: toggles for drone/gorilla attached, overlord assignment, and gear presets.
               </div>
             </div>
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-between border-t border-slate-800/60 px-5 py-4">
             <div className="text-xs text-slate-400/80">
-              Tip: Add hero images to{" "}
-              <code className="text-slate-300/80">public/heroes/&lt;id&gt;.png</code>
+              Tip: Upload/profile wiring will populate these slots.
             </div>
             <button
               type="button"
@@ -351,41 +298,164 @@ function SquadFolderModal({
   );
 }
 
+function GatePromptModal({
+  open,
+  kind,
+  onClose,
+  onYes,
+}: {
+  open: boolean;
+  kind: GateKind | null;
+  onClose: () => void;
+  onYes: () => void;
+}) {
+  if (!open || !kind) return null;
+
+  const question =
+    kind === "drone"
+      ? "Has your server reached or passed Day 85 for the game?"
+      : "Has your server reached or passed S2 Day 89?";
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+      />
+      <div className="absolute left-1/2 top-24 w-[min(720px,calc(100vw-24px))] -translate-x-1/2">
+        <div className="rounded-3xl border border-slate-700/50 bg-black/65 backdrop-blur-xl p-6 shadow-[0_0_60px_rgba(168,85,247,.12)]">
+          <div className="text-xs uppercase tracking-[0.3em] text-slate-400/80">unlock check</div>
+          <div className="mt-2 text-lg text-slate-100/90">{question}</div>
+          <div className="mt-2 text-sm text-slate-300/70">
+            This is just gating the UI so you only see systems your server has unlocked.
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-2xl border border-slate-700/60 bg-black/40 px-4 py-2 text-xs uppercase tracking-widest text-slate-200/80 hover:border-slate-500/60 transition"
+            >
+              No
+            </button>
+            <button
+              type="button"
+              onClick={onYes}
+              className="rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200/90 hover:border-cyan-300/40 transition"
+            >
+              Yes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SimpleSystemModal({
+  title,
+  open,
+  onClose,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+      />
+      <div className="absolute left-1/2 top-16 w-[min(920px,calc(100vw-24px))] -translate-x-1/2">
+        <div className="rounded-3xl border border-fuchsia-500/25 bg-black/55 backdrop-blur-xl shadow-[0_0_60px_rgba(168,85,247,.14)] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
+            <div className="flex items-baseline gap-3">
+              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">
+                {title.toUpperCase()}
+              </div>
+              <div className="text-xs text-slate-300/70">{subtitle}</div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className={cn(
+                "rounded-full border border-slate-700/60 bg-black/40 px-3 py-1",
+                "text-xs uppercase tracking-widest text-slate-200/80",
+                "hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+              )}
+              aria-label="Minimize system menu"
+              title="Minimize"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-5">
+            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
+              This modal will mirror the “folder” concept:
+              <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
+                <li>Show system-specific slots/items</li>
+                <li>Populate from user uploads/input</li>
+                <li>Later: connect to truths + calculations</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-2">
+              {["🧠", "⚙️", "📈", "🛰️", "🧩", "🧪", "🛡️", "✅"].map((emoji, i) => (
+                <div
+                  key={`${emoji}-${i}`}
+                  className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
+                >
+                  <span className="text-lg">{emoji}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end border-t border-slate-800/60 px-5 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-2xl border border-slate-700/60 bg-black/40 px-4 py-2 text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+            >
+              Minimize
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  // Temporary placeholder squad data.
-  // Later: replace with player state (localStorage / DB).
+  // Empty by design: populated later by user uploads/input.
   const squads: SquadState[] = useMemo(
     () => [
-      {
-        slot: 1,
-        name: "Squad 1",
-        heroIds: ["kimberly", "murphy", "williams", "marshall", "stetmann"],
-        overlordId: null,
-      },
-      {
-        slot: 2,
-        name: "Squad 2",
-        heroIds: ["dva", "carlie", "morrison", "lucious", "schuyler"],
-        overlordId: null,
-      },
-      {
-        slot: 3,
-        name: "Squad 3",
-        heroIds: ["tesla", "swift", "mcgregor", "adam", "fiona"],
-        overlordId: null,
-      },
-      {
-        slot: 4,
-        name: "Squad 4",
-        heroIds: ["mason", "violet", "scarlet", "sarah", "elsa"],
-        overlordId: null,
-      },
+      { slot: 1, name: "Squad 1", heroIds: [null, null, null, null, null], overlordId: null },
+      { slot: 2, name: "Squad 2", heroIds: [null, null, null, null, null], overlordId: null },
+      { slot: 3, name: "Squad 3", heroIds: [null, null, null, null, null], overlordId: null },
+      { slot: 4, name: "Squad 4", heroIds: [null, null, null, null, null], overlordId: null },
     ],
     []
   );
 
   const [folderOpen, setFolderOpen] = useState(false);
   const [activeSlot, setActiveSlot] = useState<SquadSlot | null>(null);
+
+  const [gateOpen, setGateOpen] = useState(false);
+  const [gateKind, setGateKind] = useState<GateKind | null>(null);
+
+  const [droneModalOpen, setDroneModalOpen] = useState(false);
+  const [overlordModalOpen, setOverlordModalOpen] = useState(false);
 
   const activeSquad = useMemo(
     () => squads.find((s) => s.slot === activeSlot) ?? null,
@@ -411,8 +481,36 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Modal folder */}
+      {/* Squad folder modal */}
       <SquadFolderModal squad={activeSquad} open={folderOpen} onClose={() => setFolderOpen(false)} />
+
+      {/* Gate prompt modal */}
+      <GatePromptModal
+        open={gateOpen}
+        kind={gateKind}
+        onClose={() => setGateOpen(false)}
+        onYes={() => {
+          setGateOpen(false);
+          if (gateKind === "drone") setDroneModalOpen(true);
+          if (gateKind === "overlord") setOverlordModalOpen(true);
+        }}
+      />
+
+      {/* Drone modal (unlocked only after gate yes) */}
+      <SimpleSystemModal
+        title="Drone"
+        subtitle="folder view"
+        open={droneModalOpen}
+        onClose={() => setDroneModalOpen(false)}
+      />
+
+      {/* Overlord modal (unlocked only after gate yes) */}
+      <SimpleSystemModal
+        title="Overlord"
+        subtitle="folder view"
+        open={overlordModalOpen}
+        onClose={() => setOverlordModalOpen(false)}
+      />
 
       {/* 3-column layout */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[260px_1fr_260px]">
@@ -425,46 +523,79 @@ export default function Home() {
               key={s.slot}
               title={s.name}
               subtitle="Tap to open folder"
-              badge={`${s.heroIds.length} heroes`}
+              badge="empty"
               onClick={() => {
                 setActiveSlot(s.slot);
                 setFolderOpen(true);
               }}
               icons={[
-                { label: "Hero", emoji: "🧑‍🚀" },
-                { label: "Hero", emoji: "🛡️" },
-                { label: "Hero", emoji: "🚀" },
-                { label: "Hero", emoji: "✈️" },
+                { label: "Hero", emoji: "➕" },
+                { label: "Hero", emoji: "➕" },
+                { label: "Hero", emoji: "➕" },
+                { label: "Hero", emoji: "➕" },
+                { label: "Hero", emoji: "➕" },
                 { label: "Gear", emoji: "⚙️" },
-                { label: "Drone", emoji: "🛰️" },
-                { label: "Overlord", emoji: "🦍" },
-                { label: "Optimize", emoji: "📈" },
+                { label: "Drone", emoji: "?" },
+                { label: "Overlord", emoji: "?" },
               ]}
             />
           ))}
 
           <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-            These folders will later reflect your profile’s exact squads (hero stars/skills/gear/drone/gorilla).
+            Squad folders are blank by design until the user uploads/inputs their profile data.
           </div>
         </aside>
 
-        {/* Center: chat */}
-        <main className="rounded-2xl border border-fuchsia-500/20 bg-black/25 backdrop-blur p-2 shadow-[0_0_40px_rgba(168,85,247,.08)]">
-          <ChatWindow
-            endpoint="api/chat"
-            emoji="🤖"
-            placeholder="Ask about heroes, skills, star gates, gear, drone, or gorilla…"
-            emptyStateComponent={
-              <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-                <div className="text-sm text-slate-200/90">
-                  Brain is live. Truths are loaded. Player state comes next.
+        {/* Center: chat + optimizer entry */}
+        <main className="space-y-3">
+          <div className="rounded-2xl border border-fuchsia-500/20 bg-black/25 backdrop-blur p-2 shadow-[0_0_40px_rgba(168,85,247,.08)]">
+            <ChatWindow
+              endpoint="api/chat"
+              emoji="🤖"
+              placeholder="Ask about heroes, skills, star gates, gear, drone, or gorilla…"
+              emptyStateComponent={
+                <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
+                  <div className="text-sm text-slate-200/90">
+                    Brain is live. Truths are loaded. Player state comes next.
+                  </div>
+                  <div className="mt-2 text-xs text-slate-400/80">
+                    Try: “What unlocks drone systems and what do components affect?”
+                  </div>
                 </div>
-                <div className="mt-2 text-xs text-slate-400/80">
-                  Try: “Show me Kimberly’s skills and what Super Sensing means.”
+              }
+            />
+          </div>
+
+          {/* Global optimizer entry under chat box */}
+          <a
+            href="/optimizer"
+            className={cn(
+              "block rounded-2xl border border-cyan-400/25 bg-cyan-950/15 p-4",
+              "hover:border-cyan-300/35 hover:bg-cyan-950/20 transition",
+              "shadow-[0_0_30px_rgba(34,211,238,.08)]"
+            )}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm tracking-wide text-cyan-200/90">Optimizer Workspace</div>
+                <div className="mt-1 text-xs text-slate-300/70">
+                  Full plug-and-play (profile-wide) — coming next
                 </div>
               </div>
-            }
-          />
+              <div className="text-lg">📊</div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-8 gap-2">
+              {["🛡️", "✈️", "🚀", "⚙️", "🛰️", "🦍", "⭐", "🧠"].map((emoji, i) => (
+                <div
+                  key={`${emoji}-${i}`}
+                  className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
+                >
+                  <span className="text-lg">{emoji}</span>
+                </div>
+              ))}
+            </div>
+          </a>
         </main>
 
         {/* Right: tools */}
@@ -487,40 +618,62 @@ export default function Home() {
             ]}
           />
 
-          <AppGroupCard
-            title="Battle Reports"
-            subtitle="Player-specific ingestion later"
-            disabled
-            icons={[
-              { label: "Upload", emoji: "📷" },
-              { label: "OCR", emoji: "🔤" },
-              { label: "Parse", emoji: "🧾" },
-              { label: "Consent", emoji: "✅" },
-              { label: "Redact", emoji: "🫥" },
-              { label: "Stats", emoji: "📊" },
-              { label: "Match", emoji: "🧩" },
-              { label: "Export", emoji: "📤" },
-            ]}
-          />
+          {/* Drone gate tile (shows ?; clicking asks gate question) */}
+          <button
+            type="button"
+            onClick={() => {
+              setGateKind("drone");
+              setGateOpen(true);
+            }}
+            className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
+          >
+            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 hover:border-slate-600/50 transition">
+              <div className="flex items-center justify-between">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">?</div>
+                <div className="text-2xl text-slate-300/70">?</div>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {["?", "?", "?", "?", "?", "?", "?", "?"].map((t, i) => (
+                  <div
+                    key={`${t}-${i}`}
+                    className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
+                  >
+                    <span className="text-lg text-slate-300/70">?</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </button>
 
-          <AppGroupCard
-            title="Optimizer"
-            subtitle="Full profile workspace later"
-            disabled
-            icons={[
-              { label: "DPS", emoji: "💥" },
-              { label: "Tank", emoji: "🛡️" },
-              { label: "Synergy", emoji: "🔗" },
-              { label: "Stars", emoji: "⭐" },
-              { label: "Gear", emoji: "⚙️" },
-              { label: "Drone", emoji: "🛰️" },
-              { label: "Gorilla", emoji: "🦍" },
-              { label: "Plan", emoji: "🗺️" },
-            ]}
-          />
+          {/* Overlord gate tile (shows ?; clicking asks gate question) */}
+          <button
+            type="button"
+            onClick={() => {
+              setGateKind("overlord");
+              setGateOpen(true);
+            }}
+            className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
+          >
+            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 hover:border-slate-600/50 transition">
+              <div className="flex items-center justify-between">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">?</div>
+                <div className="text-2xl text-slate-300/70">?</div>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {["?", "?", "?", "?", "?", "?", "?", "?"].map((t, i) => (
+                  <div
+                    key={`${t}-${i}`}
+                    className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
+                  >
+                    <span className="text-lg text-slate-300/70">?</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </button>
 
           <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-            Squad folders = squad-scoped mini optimizer. Global optimizer = full plug-and-play workspace.
+            Drone/Overlord tiles unlock based on your server progression.
           </div>
         </aside>
       </div>
