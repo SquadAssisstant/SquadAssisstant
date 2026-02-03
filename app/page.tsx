@@ -8,8 +8,8 @@ type SquadSlot = 1 | 2 | 3 | 4;
 type SquadState = {
   slot: SquadSlot;
   name: string;
-  heroIds: (string | null)[]; // 5 slots, empty by default
-  overlordId?: string | null; // optional, null = not assigned
+  heroSlots: number; // always 5 for now
+  overlordAssigned?: boolean; // later: true/false based on player data
 };
 
 type GateKind = "drone" | "overlord";
@@ -49,6 +49,7 @@ function AppGroupCard({
           <div className="text-sm tracking-wide text-fuchsia-200/90">{title}</div>
           {subtitle ? <div className="mt-1 text-xs text-slate-300/70">{subtitle}</div> : null}
         </div>
+
         <div className="flex items-center gap-2">
           {badge ? (
             <div className="rounded-full border border-cyan-400/25 bg-cyan-950/20 px-2 py-0.5 text-[10px] uppercase tracking-widest text-cyan-200/80">
@@ -113,10 +114,7 @@ function AppGroupCard({
 
   if (href) {
     return (
-      <a
-        href={href}
-        className="block focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
-      >
+      <a href={href} className="block focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl">
         {CardInner}
       </a>
     );
@@ -125,7 +123,7 @@ function AppGroupCard({
   return CardInner;
 }
 
-function EmptyAddTile({ label }: { label: string }) {
+function AddTile({ label }: { label: string }) {
   return (
     <div
       className={cn(
@@ -135,7 +133,7 @@ function EmptyAddTile({ label }: { label: string }) {
       )}
       title={label}
     >
-      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.3em] text-slate-200/70">
+      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.35em] text-slate-200/70">
         ADD
       </div>
       <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/70">
@@ -145,7 +143,7 @@ function EmptyAddTile({ label }: { label: string }) {
   );
 }
 
-function OverlordSlotLocked() {
+function OverlordSlot({ assigned }: { assigned?: boolean }) {
   return (
     <div className="w-[140px]">
       <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">overlord</div>
@@ -155,10 +153,10 @@ function OverlordSlotLocked() {
           "border border-slate-700/50 bg-black/35",
           "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
         )}
-        title="Overlord not assigned"
+        title={assigned ? "Overlord assigned" : "No overlord assigned"}
       >
         <div className="absolute inset-0 flex items-center justify-center text-3xl text-slate-300/60">
-          ?
+          {assigned ? "🦍" : "?"}
         </div>
         <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80">
           Overlord
@@ -181,12 +179,7 @@ function SquadFolderModal({
 
   return (
     <div className="fixed inset-0 z-50">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-      />
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
       <div className="absolute left-1/2 top-16 w-[min(920px,calc(100vw-24px))] -translate-x-1/2">
         <div
@@ -198,12 +191,11 @@ function SquadFolderModal({
         >
           <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
             <div className="flex items-baseline gap-3">
-              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">
-                {squad.name.toUpperCase()}
-              </div>
+              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">{squad.name.toUpperCase()}</div>
               <div className="text-xs text-slate-300/70">folder view</div>
             </div>
 
+            {/* X = minimize */}
             <button
               type="button"
               onClick={onClose}
@@ -223,23 +215,20 @@ function SquadFolderModal({
             <div>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">
-                    heroes in this squad
-                  </div>
-                  <div className="mt-1 text-xs text-slate-300/70">5 hero slots</div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">heroes in this squad</div>
+                  <div className="mt-1 text-xs text-slate-300/70">5 hero slots • populated by uploads later</div>
                 </div>
-
-                <OverlordSlotLocked />
+                <OverlordSlot assigned={squad.overlordAssigned} />
               </div>
 
               <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                {squad.heroIds.map((_, idx) => (
-                  <EmptyAddTile key={idx} label={`Hero ${idx + 1}`} />
+                {Array.from({ length: squad.heroSlots }).map((_, idx) => (
+                  <AddTile key={idx} label={`Hero ${idx + 1}`} />
                 ))}
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-                These slots populate after user uploads/inputs squad info.
+                These slots stay blank until the user uploads their profile data.
               </div>
             </div>
 
@@ -275,15 +264,12 @@ function SquadFolderModal({
               </a>
 
               <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-                Later: toggles for drone/gorilla attached, overlord assignment, and gear presets.
+                Later: squad-scoped drone/overlord toggles, gear presets, and upload intake.
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-800/60 px-5 py-4">
-            <div className="text-xs text-slate-400/80">
-              Tip: Upload/profile wiring will populate these slots.
-            </div>
+          <div className="flex items-center justify-end border-t border-slate-800/60 px-5 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -318,18 +304,14 @@ function GatePromptModal({
 
   return (
     <div className="fixed inset-0 z-50">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-      />
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
       <div className="absolute left-1/2 top-24 w-[min(720px,calc(100vw-24px))] -translate-x-1/2">
         <div className="rounded-3xl border border-slate-700/50 bg-black/65 backdrop-blur-xl p-6 shadow-[0_0_60px_rgba(168,85,247,.12)]">
           <div className="text-xs uppercase tracking-[0.3em] text-slate-400/80">unlock check</div>
           <div className="mt-2 text-lg text-slate-100/90">{question}</div>
           <div className="mt-2 text-sm text-slate-300/70">
-            This is just gating the UI so you only see systems your server has unlocked.
+            This gates UI so you only see systems your server has unlocked.
           </div>
 
           <div className="mt-6 flex items-center justify-end gap-3">
@@ -358,10 +340,8 @@ function SimpleSystemModal({
   title,
   open,
   onClose,
-  subtitle,
 }: {
   title: string;
-  subtitle: string;
   open: boolean;
   onClose: () => void;
 }) {
@@ -369,21 +349,16 @@ function SimpleSystemModal({
 
   return (
     <div className="fixed inset-0 z-50">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-      />
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
       <div className="absolute left-1/2 top-16 w-[min(920px,calc(100vw-24px))] -translate-x-1/2">
         <div className="rounded-3xl border border-fuchsia-500/25 bg-black/55 backdrop-blur-xl shadow-[0_0_60px_rgba(168,85,247,.14)] overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
             <div className="flex items-baseline gap-3">
-              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">
-                {title.toUpperCase()}
-              </div>
-              <div className="text-xs text-slate-300/70">{subtitle}</div>
+              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">{title.toUpperCase()}</div>
+              <div className="text-xs text-slate-300/70">folder view</div>
             </div>
+
             <button
               type="button"
               onClick={onClose}
@@ -401,16 +376,16 @@ function SimpleSystemModal({
 
           <div className="p-5">
             <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-              This modal will mirror the “folder” concept:
+              This will mirror the squad folder concept, populated by user uploads + truths:
               <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
-                <li>Show system-specific slots/items</li>
-                <li>Populate from user uploads/input</li>
-                <li>Later: connect to truths + calculations</li>
+                <li>Slots/items visible</li>
+                <li>Populates from uploads/input</li>
+                <li>Later: ties into calculations</li>
               </ul>
             </div>
 
             <div className="mt-4 grid grid-cols-4 gap-2">
-              {["🧠", "⚙️", "📈", "🛰️", "🧩", "🧪", "🛡️", "✅"].map((emoji, i) => (
+              {["🧠", "⚙️", "📈", "🧩", "🧪", "🛡️", "✅", "🔎"].map((emoji, i) => (
                 <div
                   key={`${emoji}-${i}`}
                   className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
@@ -436,14 +411,40 @@ function SimpleSystemModal({
   );
 }
 
+function MysteryTile({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
+    >
+      <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 hover:border-slate-600/50 transition">
+        <div className="flex items-center justify-between">
+          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">?</div>
+          <div className="text-2xl text-slate-300/70">?</div>
+        </div>
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
+            >
+              <span className="text-lg text-slate-300/70">?</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function Home() {
-  // Empty by design: populated later by user uploads/input.
   const squads: SquadState[] = useMemo(
     () => [
-      { slot: 1, name: "Squad 1", heroIds: [null, null, null, null, null], overlordId: null },
-      { slot: 2, name: "Squad 2", heroIds: [null, null, null, null, null], overlordId: null },
-      { slot: 3, name: "Squad 3", heroIds: [null, null, null, null, null], overlordId: null },
-      { slot: 4, name: "Squad 4", heroIds: [null, null, null, null, null], overlordId: null },
+      { slot: 1, name: "Squad 1", heroSlots: 5, overlordAssigned: false },
+      { slot: 2, name: "Squad 2", heroSlots: 5, overlordAssigned: false },
+      { slot: 3, name: "Squad 3", heroSlots: 5, overlordAssigned: false },
+      { slot: 4, name: "Squad 4", heroSlots: 5, overlordAssigned: false },
     ],
     []
   );
@@ -457,10 +458,7 @@ export default function Home() {
   const [droneModalOpen, setDroneModalOpen] = useState(false);
   const [overlordModalOpen, setOverlordModalOpen] = useState(false);
 
-  const activeSquad = useMemo(
-    () => squads.find((s) => s.slot === activeSlot) ?? null,
-    [squads, activeSlot]
-  );
+  const activeSquad = useMemo(() => squads.find((s) => s.slot === activeSlot) ?? null, [squads, activeSlot]);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(1200px_circle_at_15%_10%,rgba(168,85,247,.25),transparent_45%),radial-gradient(1000px_circle_at_85%_20%,rgba(236,72,153,.18),transparent_42%),radial-gradient(900px_circle_at_55%_85%,rgba(34,211,238,.14),transparent_45%),linear-gradient(to_bottom,rgba(2,6,23,1),rgba(0,0,0,1))]">
@@ -471,9 +469,7 @@ export default function Home() {
             <div className="text-xl font-semibold tracking-[0.35em] text-fuchsia-200 drop-shadow-[0_0_12px_rgba(236,72,153,.35)]">
               SQUAD ASSISTANT
             </div>
-            <div className="hidden sm:block text-xs tracking-widest text-cyan-200/70">
-              brain • truths • squads
-            </div>
+            <div className="hidden sm:block text-xs tracking-widest text-cyan-200/70">brain • truths • squads</div>
           </div>
           <div className="text-[10px] uppercase tracking-widest text-slate-400/80">
             prod: <span className="text-emerald-300/90">live</span>
@@ -481,10 +477,9 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Squad folder modal */}
+      {/* Modals */}
       <SquadFolderModal squad={activeSquad} open={folderOpen} onClose={() => setFolderOpen(false)} />
 
-      {/* Gate prompt modal */}
       <GatePromptModal
         open={gateOpen}
         kind={gateKind}
@@ -496,21 +491,8 @@ export default function Home() {
         }}
       />
 
-      {/* Drone modal (unlocked only after gate yes) */}
-      <SimpleSystemModal
-        title="Drone"
-        subtitle="folder view"
-        open={droneModalOpen}
-        onClose={() => setDroneModalOpen(false)}
-      />
-
-      {/* Overlord modal (unlocked only after gate yes) */}
-      <SimpleSystemModal
-        title="Overlord"
-        subtitle="folder view"
-        open={overlordModalOpen}
-        onClose={() => setOverlordModalOpen(false)}
-      />
+      <SimpleSystemModal title="Drone" open={droneModalOpen} onClose={() => setDroneModalOpen(false)} />
+      <SimpleSystemModal title="Overlord" open={overlordModalOpen} onClose={() => setOverlordModalOpen(false)} />
 
       {/* 3-column layout */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[260px_1fr_260px]">
@@ -529,11 +511,11 @@ export default function Home() {
                 setFolderOpen(true);
               }}
               icons={[
-                { label: "Hero", emoji: "➕" },
-                { label: "Hero", emoji: "➕" },
-                { label: "Hero", emoji: "➕" },
-                { label: "Hero", emoji: "➕" },
-                { label: "Hero", emoji: "➕" },
+                { label: "Add", emoji: "➕" },
+                { label: "Add", emoji: "➕" },
+                { label: "Add", emoji: "➕" },
+                { label: "Add", emoji: "➕" },
+                { label: "Add", emoji: "➕" },
                 { label: "Gear", emoji: "⚙️" },
                 { label: "Drone", emoji: "?" },
                 { label: "Overlord", emoji: "?" },
@@ -542,13 +524,14 @@ export default function Home() {
           ))}
 
           <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-            Squad folders are blank by design until the user uploads/inputs their profile data.
+            Squad folders are blank until user uploads/inputs their profile data.
           </div>
         </aside>
 
-        {/* Center: chat + optimizer entry */}
+        {/* Center: chat + optimizer link */}
         <main className="space-y-3">
-          <div className="rounded-2xl border border-fuchsia-500/20 bg-black/25 backdrop-blur p-2 shadow-[0_0_40px_rgba(168,85,247,.08)]">
+          {/* IMPORTANT: give ChatWindow a height context so the input box always renders */}
+          <div className="h-[70vh] rounded-2xl border border-fuchsia-500/20 bg-black/25 backdrop-blur p-2 shadow-[0_0_40px_rgba(168,85,247,.08)]">
             <ChatWindow
               endpoint="api/chat"
               emoji="🤖"
@@ -559,14 +542,14 @@ export default function Home() {
                     Brain is live. Truths are loaded. Player state comes next.
                   </div>
                   <div className="mt-2 text-xs text-slate-400/80">
-                    Try: “What unlocks drone systems and what do components affect?”
+                    Try: “Explain drone components and what they boost.”
                   </div>
                 </div>
               }
             />
           </div>
 
-          {/* Global optimizer entry under chat box */}
+          {/* Global optimizer entry under chat */}
           <a
             href="/optimizer"
             className={cn(
@@ -618,62 +601,40 @@ export default function Home() {
             ]}
           />
 
-          {/* Drone gate tile (shows ?; clicking asks gate question) */}
-          <button
-            type="button"
+          <AppGroupCard
+            title="Battle Reports"
+            subtitle="Player-specific ingestion later"
+            disabled
+            icons={[
+              { label: "Upload", emoji: "📷" },
+              { label: "OCR", emoji: "🔤" },
+              { label: "Parse", emoji: "🧾" },
+              { label: "Consent", emoji: "✅" },
+              { label: "Redact", emoji: "🫥" },
+              { label: "Stats", emoji: "📊" },
+              { label: "Match", emoji: "🧩" },
+              { label: "Export", emoji: "📤" },
+            ]}
+          />
+
+          {/* Drone gate tile */}
+          <MysteryTile
             onClick={() => {
               setGateKind("drone");
               setGateOpen(true);
             }}
-            className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
-          >
-            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 hover:border-slate-600/50 transition">
-              <div className="flex items-center justify-between">
-                <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">?</div>
-                <div className="text-2xl text-slate-300/70">?</div>
-              </div>
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {["?", "?", "?", "?", "?", "?", "?", "?"].map((t, i) => (
-                  <div
-                    key={`${t}-${i}`}
-                    className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
-                  >
-                    <span className="text-lg text-slate-300/70">?</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </button>
+          />
 
-          {/* Overlord gate tile (shows ?; clicking asks gate question) */}
-          <button
-            type="button"
+          {/* Overlord gate tile */}
+          <MysteryTile
             onClick={() => {
               setGateKind("overlord");
               setGateOpen(true);
             }}
-            className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
-          >
-            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 hover:border-slate-600/50 transition">
-              <div className="flex items-center justify-between">
-                <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">?</div>
-                <div className="text-2xl text-slate-300/70">?</div>
-              </div>
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {["?", "?", "?", "?", "?", "?", "?", "?"].map((t, i) => (
-                  <div
-                    key={`${t}-${i}`}
-                    className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
-                  >
-                    <span className="text-lg text-slate-300/70">?</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </button>
+          />
 
           <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-            Drone/Overlord tiles unlock based on your server progression.
+            Drone/Overlord tiles unlock via server progression checks.
           </div>
         </aside>
       </div>
