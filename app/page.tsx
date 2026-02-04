@@ -538,9 +538,6 @@ export default function Home() {
               placeholder="Ask about heroes, skills, star gates, gear, drone, or gorilla…"
               emptyStateComponent={
                 <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-                  <div className="text-sm text-slate-200/90">
-                    Brain is live. Truths are loaded. Player state comes next.
-                  </div>
                   <div className="mt-2 text-xs text-slate-400/80">
                     Try: “Explain drone components and what they boost.”
                   </div>
