@@ -228,7 +228,7 @@ function SquadFolderModal({
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-                These slots stay blank until the user uploads their profile data.
+                These slots stay blank until the user uploads/inputs their profile data.
               </div>
             </div>
 
@@ -469,7 +469,6 @@ export default function Home() {
             <div className="text-xl font-semibold tracking-[0.35em] text-fuchsia-200 drop-shadow-[0_0_12px_rgba(236,72,153,.35)]">
               SQUAD ASSISTANT
             </div>
-            <div className="hidden sm:block text-xs tracking-widest text-cyan-200/70">brain • truths • squads</div>
           </div>
           <div className="text-[10px] uppercase tracking-widest text-slate-400/80">
             prod: <span className="text-emerald-300/90">live</span>
@@ -538,6 +537,9 @@ export default function Home() {
               placeholder="Ask about heroes, skills, star gates, gear, drone, or gorilla…"
               emptyStateComponent={
                 <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
+                  <div className="text-sm text-slate-200/90">
+                    Brain is live. Truths are loaded. Player state comes next.
+                  </div>
                   <div className="mt-2 text-xs text-slate-400/80">
                     Try: “Explain drone components and what they boost.”
                   </div>
