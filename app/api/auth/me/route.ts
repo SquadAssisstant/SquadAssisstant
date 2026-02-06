@@ -3,7 +3,9 @@ import { cookies } from "next/headers";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
 export async function GET() {
-  const token = cookies().get(sessionCookieName())?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get(sessionCookieName())?.value;
+
   if (!token) return NextResponse.json({ authed: false });
 
   try {
