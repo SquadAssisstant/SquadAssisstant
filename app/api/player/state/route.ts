@@ -5,7 +5,10 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 async function requireSession() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(sessionCookieName())?.value;
+  const token =
+  (cookieStore as any).getAll?.().find((c: any) => c?.name === sessionCookieName())?.value ??
+  (typeof (cookieStore as any).get === "function" ? (cookieStore as any).get(sessionCookieName())?.value : undefined);
+
   if (!token) return null;
 
   try {
