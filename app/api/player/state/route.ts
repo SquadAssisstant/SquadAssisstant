@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { sessionCookieName, verifySession } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-async function requireSession() {
-  const cookieStore = await cookies();
-  const token =
-  (cookieStore as any).getAll?.().find((c: any) => c?.name === sessionCookieName())?.value ??
-  (typeof (cookieStore as any).get === "function" ? (cookieStore as any).get(sessionCookieName())?.value : undefined);
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(";").map(p => p.trim());
+  for (const p of parts) {
+    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
+  }
+  return undefined;
+}
 
+async function requireSessionFromReq(req: Request) {
+  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
-
   try {
     return await verifySession(token);
   } catch {
@@ -18,8 +21,8 @@ async function requireSession() {
   }
 }
 
-export async function GET() {
-  const s = await requireSession();
+export async function GET(req: Request) {
+  const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data, error } = await supabaseAdmin
@@ -34,7 +37,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  const s = await requireSession();
+  const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
@@ -42,7 +45,6 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Fetch current state and merge shallowly (v1 simple merge).
   const existing = await supabaseAdmin
     .from("player_state")
     .select("state")
