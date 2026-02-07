@@ -80,7 +80,9 @@ export async function POST(req: Request) {
   const baseName = safePathSegment(file.name || "upload");
   const objectPath = `profiles/${s.profileId}/images/${yyyy}-${mm}-${dd}/${Date.now()}_${baseName}.${ext}`;
 
-  const upload = await supabaseAdmin.storage
+  // ✅ Correct: call supabaseAdmin() first
+  const upload = await supabaseAdmin()
+    .storage
     .from("uploads")
     .upload(objectPath, buf, { contentType: file.type, upsert: false });
 
@@ -111,7 +113,8 @@ export async function POST(req: Request) {
     status: "uploaded",
   };
 
-  const ins = await supabaseAdmin
+  // ✅ Correct: call supabaseAdmin() first
+  const ins = await supabaseAdmin()
     .from("battle_reports")
     .insert({
       profile_id: s.profileId,
