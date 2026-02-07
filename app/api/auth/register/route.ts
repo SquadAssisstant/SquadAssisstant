@@ -28,8 +28,7 @@ export async function POST(req: Request) {
   const passwordHash = await hash(password, 10);
 
   // 1️⃣ Create profile
-  const { data: profile, error: profileError } = await supabaseAdmin()
-    .from("profiles")
+  const { data: profile, error: profileError } = await supabaseAdmin().from("profiles")
     .insert({
       username,
       pass_hash: passwordHash,
