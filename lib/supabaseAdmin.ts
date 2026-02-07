@@ -1,16 +1,23 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-let _client: ReturnType<typeof createClient> | null = null;
+let _client: SupabaseClient | null = null;
 
-export function supabaseAdmin() {
+export function supabaseAdmin(): SupabaseClient {
+  if (_client) return _client;
+
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url) throw new Error("Missing SUPABASE_URL");
-  if (!key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!_client) {
-    _client = createClient(url, key, { auth: { persistSession: false } });
+  if (!url) {
+    throw new Error("SUPABASE_URL is missing");
   }
+  if (!key) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is missing");
+  }
+
+  _client = createClient(url, key, {
+    auth: { persistSession: false },
+  });
+
   return _client;
 }
