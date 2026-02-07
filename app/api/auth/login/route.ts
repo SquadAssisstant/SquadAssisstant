@@ -1,64 +1,67 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { signSession, sessionCookieName } from "@/lib/session";
-
-function normalizeUsername(u: string) {
-  return u.trim();
-}
+import { createSession, sessionCookieName } from "@/lib/session";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-
-  const username = normalizeUsername((body?.username ?? "").toString());
-  const password = (body?.password ?? "").toString();
-  const rememberDevice = !!body?.rememberDevice;
-
-  if (!username || !password) {
-    return NextResponse.json({ error: "Missing username or password." }, { status: 400 });
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { data: profile, error } = await supabaseAdmin
+  const { username, password } = body as {
+    username?: string;
+    password?: string;
+  };
+
+  if (!username || !password) {
+    return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
+  }
+
+  // 🔑 Query profile
+  const { data: profile, error } = await supabaseAdmin()
     .from("profiles")
-    .select("id, username, pass_hash")
+    .select("id, username, password_hash")
     .eq("username", username)
     .single();
 
   if (error || !profile) {
-    return NextResponse.json({ error: "Invalid username or password." }, { status: 401 });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const ok = await bcrypt.compare(password, profile.pass_hash);
+  // 🔐 Verify password
+  const ok = await verifyPassword(password, profile.password_hash);
   if (!ok) {
-    return NextResponse.json({ error: "Invalid username or password." }, { status: 401 });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const token = await signSession(
-    { profileId: profile.id, username: profile.username },
-    rememberDevice ? "30d" : "2h"
-  );
-
-  const res = NextResponse.json({ ok: true });
-
-  // If rememberDevice=false, cookie is session-only (no maxAge)
-  res.cookies.set(sessionCookieName(), token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    ...(rememberDevice ? { maxAge: 60 * 60 * 24 * 30 } : {}),
+  // 🎟 Create session
+  const token = await createSession({
+    profileId: profile.id,
+    username: profile.username,
   });
 
-  // Optional convenience: store last username for prefill (NOT sensitive)
-  if (rememberDevice) {
-    res.cookies.set("sa_last_user", encodeURIComponent(profile.username), {
-      httpOnly: false,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-  }
+  const res = NextResponse.json({ ok: true, username: profile.username });
+  res.cookies.set({
+    name: sessionCookieName(),
+    value: token,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
 
   return res;
+}
+
+/* ---------------- helpers ---------------- */
+
+import { compare } from "bcryptjs";
+
+async function verifyPassword(plain: string, hash: string) {
+  try {
+    return await compare(plain, hash);
+  } catch {
+    return false;
+  }
 }
