@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
   res.cookies.set(sessionCookieName(), token, {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     ...(rememberDevice ? { maxAge: 60 * 60 * 24 * 30 } : {}),
