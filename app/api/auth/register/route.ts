@@ -1,62 +1,76 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-function normalizeUsername(u: string) {
-  return u.trim();
-}
+import { signSession, sessionCookieName } from "@/lib/session";
+import { hash } from "bcryptjs";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-
-  const username = normalizeUsername((body?.username ?? "").toString());
-  const password = (body?.password ?? "").toString();
-
-  if (!username || username.length < 3) {
-    return NextResponse.json({ error: "Username must be at least 3 characters." }, { status: 400 });
-  }
-  if (!password || password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const pass_hash = await bcrypt.hash(password, 10);
+  const username = (body as any).username?.toString()?.trim();
+  const password = (body as any).password?.toString();
+  const rememberDevice = !!(body as any).rememberDevice;
 
-  const { data: profile, error } = await supabaseAdmin
+  if (!username || !password) {
+    return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
+  }
+
+  if (username.length < 3) {
+    return NextResponse.json({ error: "Username too short" }, { status: 400 });
+  }
+
+  if (password.length < 6) {
+    return NextResponse.json({ error: "Password too short" }, { status: 400 });
+  }
+
+  const passwordHash = await hash(password, 10);
+
+  // 1️⃣ Create profile
+  const { data: profile, error: profileError } = await supabaseAdmin()
     .from("profiles")
-    .insert({ username, pass_hash })
+    .insert({
+      username,
+      pass_hash: passwordHash,
+    })
     .select("id, username")
     .single();
 
-  if (error || !profile) {
-    return NextResponse.json({ error: error?.message ?? "Failed to create profile." }, { status: 400 });
+  if (profileError) {
+    if (profileError.code === "23505") {
+      return NextResponse.json({ error: "Username already exists" }, { status: 409 });
+    }
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
   }
 
-  // Initialize a minimal player_state blob (safe defaults)
-  const initialState = {
-    squads: {
-      squad1: { heroes: [null, null, null, null, null], overlord: null },
-      squad2: { heroes: [null, null, null, null, null], overlord: null },
-      squad3: { heroes: [null, null, null, null, null], overlord: null },
-      squad4: { heroes: [null, null, null, null, null], overlord: null },
-    },
-    gates: {
-      // user will set later (or inferred from uploads)
-      droneUnlocked: false,
-      overlordUnlocked: false,
-      serverDay: null,
-      season: null,
-      seasonDay: null,
-    },
-    heroes: {},     // per-hero owned/level/stars later
-    gear: {},       // inventory later
-    drone: {},      // drone state later
-    overlord: {},   // overlord state later
-  };
+  // 2️⃣ Create empty player state
+  const { error: stateError } = await supabaseAdmin()
+    .from("player_state")
+    .insert({
+      profile_id: profile.id,
+      state: {},
+    });
 
-  await supabaseAdmin.from("player_state").insert({
-    profile_id: profile.id,
-    state: initialState,
+  if (stateError) {
+    return NextResponse.json({ error: stateError.message }, { status: 500 });
+  }
+
+  // 3️⃣ Create session
+  const token = await signSession(
+    { profileId: profile.id, username: profile.username },
+    rememberDevice ? "30d" : "2h"
+  );
+
+  const res = NextResponse.json({ ok: true, username: profile.username });
+
+  res.cookies.set(sessionCookieName(), token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    ...(rememberDevice ? { maxAge: 60 * 60 * 24 * 30 } : {}),
   });
 
-  return NextResponse.json({ ok: true, username: profile.username });
+  return res;
 }
