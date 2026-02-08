@@ -16,51 +16,39 @@ export async function POST(req: Request) {
   if (!username || !password) {
     return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
   }
+  if (username.length < 3) return NextResponse.json({ error: "Username too short" }, { status: 400 });
+  if (password.length < 6) return NextResponse.json({ error: "Password too short" }, { status: 400 });
 
-  if (username.length < 3) {
-    return NextResponse.json({ error: "Username too short" }, { status: 400 });
-  }
+  const sb = supabaseAdmin(); // ✅ anchor the type
+  const pass_hash = await hash(password, 10);
 
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Password too short" }, { status: 400 });
-  }
-
-  const passwordHash = await hash(password, 10);
-
-  // 1️⃣ Create profile
-  const { data: profile, error: profileError } = await supabaseAdmin()
+  const { data: profile, error: profileError } = await sb
     .from("profiles")
-    .insert({username,pass_hash: passwordHash,})
+    .insert({ username, pass_hash })
     .select("id, username")
     .single();
 
-  if (profileError) {
-    if (profileError.code === "23505") {
+  if (profileError || !profile) {
+    if ((profileError as any)?.code === "23505") {
       return NextResponse.json({ error: "Username already exists" }, { status: 409 });
     }
-    return NextResponse.json({ error: profileError.message }, { status: 500 });
+    return NextResponse.json({ error: profileError?.message ?? "Create profile failed" }, { status: 500 });
   }
 
-  // 2️⃣ Create empty player state
-  const { error: stateError } = await supabaseAdmin()
+  const { error: stateError } = await sb
     .from("player_state")
-    .insert({
-      profile_id: profile.id,
-      state: {},
-    });
+    .insert({ profile_id: profile.id, state: {} });
 
   if (stateError) {
     return NextResponse.json({ error: stateError.message }, { status: 500 });
   }
 
-  // 3️⃣ Create session
   const token = await signSession(
     { profileId: profile.id, username: profile.username },
     rememberDevice ? "30d" : "2h"
   );
 
   const res = NextResponse.json({ ok: true, username: profile.username });
-
   res.cookies.set(sessionCookieName(), token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -71,3 +59,4 @@ export async function POST(req: Request) {
 
   return res;
 }
+p
