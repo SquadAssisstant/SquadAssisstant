@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 
   // 1️⃣ Create profile
   const { data: profile, error: profileError } = await supabaseAdmin()
-    .from("profiles")
+    from("profiles")
     .insert({username,pass_hash: passwordHash,})
     .select("id, username")
     .single();
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   // 2️⃣ Create empty player state
   const { error: stateError } = await supabaseAdmin()
-    .from("player_state")
+    from("player_state")
     .insert({
       profile_id: profile.id,
       state: {},
