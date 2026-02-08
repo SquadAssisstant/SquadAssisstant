@@ -3,6 +3,12 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { signSession, sessionCookieName } from "@/lib/session";
 import { compare } from "bcryptjs";
 
+type ProfileRow = {
+  id: string;
+  username: string;
+  pass_hash: string;
+};
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
@@ -17,20 +23,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
   }
 
-  const sb = supabaseAdmin(); // ✅ anchor the type
+  const sb = supabaseAdmin();
 
-  const { data: profile, error } = await sb
+  const { data, error } = await sb
     .from("profiles")
     .select("id, username, pass_hash")
     .eq("username", username)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) {
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!data) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
+  const profile = data as ProfileRow;
+
   const ok = await compare(password, profile.pass_hash);
-  if (!ok) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  if (!ok) {
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
 
   const token = await signSession(
     { profileId: profile.id, username: profile.username },
@@ -38,6 +51,7 @@ export async function POST(req: Request) {
   );
 
   const res = NextResponse.json({ ok: true, username: profile.username });
+
   res.cookies.set(sessionCookieName(), token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
