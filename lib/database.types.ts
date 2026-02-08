@@ -1,4 +1,3 @@
-// lib/database.types.ts
 export type Json =
   | string
   | number
@@ -11,41 +10,15 @@ export type Database = {
   public: {
     Tables: {
       profiles: {
-        Row: {
-          id: string;
-          username: string;
-          pass_hash: string;
-          created_at?: string | null;
-        };
-        Insert: {
-          id?: string;
-          username: string;
-          pass_hash: string;
-          created_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          username?: string;
-          pass_hash?: string;
-          created_at?: string | null;
-        };
+        Row: { id: string; username: string; pass_hash: string; created_at?: string | null };
+        Insert: { id?: string; username: string; pass_hash: string; created_at?: string | null };
+        Update: { id?: string; username?: string; pass_hash?: string; created_at?: string | null };
       };
 
       player_state: {
-        Row: {
-          profile_id: string;
-          state: Json;
-          updated_at?: string | null;
-        };
-        Insert: {
-          profile_id: string;
-          state: Json;
-          updated_at?: string | null;
-        };
-        Update: {
-          state?: Json;
-          updated_at?: string | null;
-        };
+        Row: { profile_id: string; state: Json; updated_at?: string | null };
+        Insert: { profile_id: string; state: Json; updated_at?: string | null };
+        Update: { state?: Json; updated_at?: string | null };
       };
 
       battle_reports: {
@@ -79,3 +52,4 @@ export type Database = {
     CompositeTypes: {};
   };
 };
+
