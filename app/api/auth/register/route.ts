@@ -3,14 +3,19 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { signSession, sessionCookieName } from "@/lib/session";
 import { hash } from "bcryptjs";
 
+type ProfileRow = {
+  id: string;
+  username: string;
+};
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const username = (body as any).username?.toString()?.trim();
-  const password = (body as any).password?.toString();
+  const username = (body as any).username?.toString()?.trim() as string | undefined;
+  const password = (body as any).password?.toString() as string | undefined;
   const rememberDevice = !!(body as any).rememberDevice;
 
   if (!username || !password) {
@@ -19,30 +24,33 @@ export async function POST(req: Request) {
   if (username.length < 3) return NextResponse.json({ error: "Username too short" }, { status: 400 });
   if (password.length < 6) return NextResponse.json({ error: "Password too short" }, { status: 400 });
 
-  const sb = supabaseAdmin(); // ✅ IMPORTANT: call the function once
+  const sb = supabaseAdmin();
   const pass_hash = await hash(password, 10);
 
   // 1) Create profile
-  const { data: profile, error: profileError } = await sb
+  const created = await sb
     .from("profiles")
     .insert({ username, pass_hash })
     .select("id, username")
     .single();
 
-  if (profileError || !profile) {
-    if ((profileError as any)?.code === "23505") {
+  if (created.error || !created.data) {
+    if ((created.error as any)?.code === "23505") {
       return NextResponse.json({ error: "Username already exists" }, { status: 409 });
     }
-    return NextResponse.json({ error: profileError?.message ?? "Create profile failed" }, { status: 500 });
+    return NextResponse.json({ error: created.error?.message ?? "Create profile failed" }, { status: 500 });
   }
 
-  // 2) Create empty player state row
-  const { error: stateError } = await sb
-    .from("player_state")
-    .insert({ profile_id: profile.id, state: {} });
+  const profile = created.data as ProfileRow;
 
-  if (stateError) {
-    return NextResponse.json({ error: stateError.message }, { status: 500 });
+  // 2) Create empty player state
+  const stateIns = await sb.from("player_state").insert({
+    profile_id: profile.id,
+    state: {},
+  });
+
+  if (stateIns.error) {
+    return NextResponse.json({ error: stateIns.error.message }, { status: 500 });
   }
 
   // 3) Create session cookie
