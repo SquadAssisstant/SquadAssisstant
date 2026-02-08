@@ -17,7 +17,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
   }
 
-  const { data: profile, error } = await supabaseAdmin()
+  const sb = supabaseAdmin(); // ✅ anchor the type
+
+  const { data: profile, error } = await sb
     .from("profiles")
     .select("id, username, pass_hash")
     .eq("username", username)
@@ -28,9 +30,7 @@ export async function POST(req: Request) {
   }
 
   const ok = await compare(password, profile.pass_hash);
-  if (!ok) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
+  if (!ok) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
   const token = await signSession(
     { profileId: profile.id, username: profile.username },
@@ -38,7 +38,6 @@ export async function POST(req: Request) {
   );
 
   const res = NextResponse.json({ ok: true, username: profile.username });
-
   res.cookies.set(sessionCookieName(), token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
