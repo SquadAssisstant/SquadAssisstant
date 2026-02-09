@@ -25,14 +25,28 @@ export async function GET(req: Request) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await supabaseAdmin
+  const url = new URL(req.url);
+  const limitRaw = url.searchParams.get("limit");
+  const consent = url.searchParams.get("consent");
+
+  const limit = Math.max(1, Math.min(200, Number(limitRaw ?? "50") || 50));
+
+  const sb: any = supabaseAdmin(); // ✅ hard cast + called
+
+  let q = sb
     .from("battle_reports")
-    .select("id, raw_storage_path, parsed, created_at")
+    .select("id, created_at, consent_scope, raw_storage_path, parsed")
     .eq("profile_id", s.profileId)
     .order("created_at", { ascending: false })
-    .limit(25);
+    .limit(limit);
+
+  if (consent) {
+    q = q.eq("consent_scope", consent);
+  }
+
+  const { data, error } = await q;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, items: data });
+  return NextResponse.json({ ok: true, username: s.username, count: data?.length ?? 0, items: data ?? [] });
 }
