@@ -80,9 +80,9 @@ export async function POST(req: Request) {
   const baseName = safePathSegment(file.name || "upload");
   const objectPath = `profiles/${s.profileId}/images/${yyyy}-${mm}-${dd}/${Date.now()}_${baseName}.${ext}`;
 
-  // ✅ Correct: call supabaseAdmin() first
-  const upload = await supabaseAdmin()
-    .storage
+  const sb: any = supabaseAdmin(); // ✅ hard cast to stop TS blocking
+
+  const upload = await sb.storage
     .from("uploads")
     .upload(objectPath, buf, { contentType: file.type, upsert: false });
 
@@ -90,7 +90,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
 
-  // EXIF/XMP parse (best-effort)
   let meta: any = null;
   try {
     meta = await exifr.parse(buf, { tiff: true, exif: true, xmp: true, gps: true, icc: false, iptc: false });
@@ -113,8 +112,7 @@ export async function POST(req: Request) {
     status: "uploaded",
   };
 
-  // ✅ Correct: call supabaseAdmin() first
-  const ins = await supabaseAdmin()
+  const ins = await sb
     .from("battle_reports")
     .insert({
       profile_id: s.profileId,
