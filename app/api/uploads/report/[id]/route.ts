@@ -23,16 +23,15 @@ async function requireSessionFromReq(req: Request) {
 
 /**
  * Privacy scrub:
- * - remove timestamps (created_at / updated_at and EXIF dates)
  * - remove GPS/location
- * - remove any profile identifiers embedded in parsed payload
+ * - remove EXIF date/time-ish fields
+ * - remove any accidental identity/location blobs if present
  */
 function scrubParsed(parsed: any) {
   if (!parsed || typeof parsed !== "object") return parsed;
 
   const clone = JSON.parse(JSON.stringify(parsed));
 
-  // Remove EXIF GPS + date-ish fields if present
   if (clone.exif && typeof clone.exif === "object") {
     const ex = clone.exif;
 
@@ -56,25 +55,18 @@ function scrubParsed(parsed: any) {
     delete ex.OffsetTime;
   }
 
-  // Remove any accidental identity fields if they ever appear
-  if (clone.identity && typeof clone.identity === "object") {
-    delete clone.identity;
-  }
-  if (clone.location && typeof clone.location === "object") {
-    delete clone.location;
-  }
+  delete clone.identity;
+  delete clone.location;
 
   return clone;
 }
 
-export async function GET(req: Request, ctx: { params: { id: string } }) {
+export async function GET(req: Request, context: { params: Record<string, string> }) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const id = ctx.params.id;
-  if (!id || typeof id !== "string") {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  }
+  const id = context?.params?.id;
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const sb: any = supabaseAdmin();
 
@@ -92,16 +84,13 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const parsedScrubbed = scrubParsed(data.parsed);
-
-  // Note: we do NOT return profile_id, created_at, updated_at, or any timestamps.
   return NextResponse.json({
     ok: true,
     report: {
       id: data.id,
       consent_scope: data.consent_scope ?? "private",
       raw_storage_path: data.raw_storage_path ?? null,
-      parsed: parsedScrubbed,
+      parsed: scrubParsed(data.parsed),
     },
   });
 }
