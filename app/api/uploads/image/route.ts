@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
 import { guessExtFromMime, safePathSegment } from "@/lib/upload";
 import * as exifr from "exifr";
+import crypto from "crypto";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
@@ -53,6 +54,10 @@ function classifyProvenance(meta: any, file: { mime: string; size: number; name:
   return { label: "unknown" as Provenance, confidence: 0.4, signals: [] as string[] };
 }
 
+function sha256Hex(buf: Buffer) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -65,13 +70,59 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing file field named 'file'" }, { status: 400 });
   }
 
+  // Optional metadata fields (client can send these)
+  const uploadKindRaw = (form.get("kind") ?? "unknown")?.toString();
+  const variantKeyRaw = (form.get("variantKey") ?? "default")?.toString();
+
+  const uploadKind =
+    ["battle_report", "hero_page", "gear_page", "drone_page", "overlord_page", "unknown"].includes(uploadKindRaw)
+      ? uploadKindRaw
+      : "unknown";
+
+  // Keep variantKey simple + safe
+  const variantKey = safePathSegment(variantKeyRaw || "default");
+
   if (!file.type.startsWith("image/")) {
     return NextResponse.json({ error: "Only image uploads supported for now" }, { status: 400 });
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
+  const contentHash = sha256Hex(buf);
   const ext = guessExtFromMime(file.type);
 
+  const sb: any = supabaseAdmin();
+
+  // ✅ DEDUPE CHECK (don’t store exact repeats)
+  // We scan your recent reports and compare parsed.upload.contentHash + kind + variantKey
+  const recent = await sb
+    .from("battle_reports")
+    .select("id, parsed")
+    .eq("profile_id", s.profileId)
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (recent.error) {
+    return NextResponse.json({ error: recent.error.message }, { status: 500 });
+  }
+
+  const found = (recent.data ?? []).find((r: any) => {
+    const u = r?.parsed?.upload;
+    return u?.contentHash === contentHash && u?.kind === uploadKind && u?.variantKey === variantKey;
+  });
+
+  if (found) {
+    // Duplicate: return the existing report; do not upload/store again
+    return NextResponse.json({
+      ok: true,
+      deduped: true,
+      reportId: found.id,
+      kind: uploadKind,
+      variantKey,
+      contentHash,
+    });
+  }
+
+  // Not a duplicate → store image and create report row
   const now = new Date();
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
@@ -79,8 +130,6 @@ export async function POST(req: Request) {
 
   const baseName = safePathSegment(file.name || "upload");
   const objectPath = `profiles/${s.profileId}/images/${yyyy}-${mm}-${dd}/${Date.now()}_${baseName}.${ext}`;
-
-  const sb: any = supabaseAdmin(); // ✅ hard cast to stop TS blocking
 
   const upload = await sb.storage
     .from("uploads")
@@ -90,6 +139,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
 
+  // EXIF/XMP parse (best-effort)
   let meta: any = null;
   try {
     meta = await exifr.parse(buf, { tiff: true, exif: true, xmp: true, gps: true, icc: false, iptc: false });
@@ -106,6 +156,11 @@ export async function POST(req: Request) {
       size: file.size,
       storageBucket: "uploads",
       storagePath: objectPath,
+
+      // ✅ Deduping + progress variance control
+      kind: uploadKind,
+      variantKey,
+      contentHash,
     },
     exif: meta ?? null,
     provenance,
@@ -127,5 +182,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: ins.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, reportId: ins.data.id, storagePath: objectPath, provenance });
+  return NextResponse.json({
+    ok: true,
+    deduped: false,
+    reportId: ins.data.id,
+    storagePath: objectPath,
+    kind: uploadKind,
+    variantKey,
+    contentHash,
+    provenance,
+  });
 }
