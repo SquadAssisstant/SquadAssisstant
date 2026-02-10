@@ -21,15 +21,8 @@ async function requireSessionFromReq(req: Request) {
   }
 }
 
-/**
- * Privacy scrub:
- * - remove GPS/location
- * - remove EXIF date/time-ish fields
- * - remove any accidental identity/location blobs if present
- */
 function scrubParsed(parsed: any) {
   if (!parsed || typeof parsed !== "object") return parsed;
-
   const clone = JSON.parse(JSON.stringify(parsed));
 
   if (clone.exif && typeof clone.exif === "object") {
@@ -61,11 +54,14 @@ function scrubParsed(parsed: any) {
   return clone;
 }
 
-export async function GET(req: Request, context: { params: Record<string, string> }) {
+export async function GET(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const id = context?.params?.id;
+  const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const sb: any = supabaseAdmin();
@@ -79,7 +75,7 @@ export async function GET(req: Request, context: { params: Record<string, string
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Enforce ownership (no cross-user access)
+  // Ownership check
   if (data.profile_id !== s.profileId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
