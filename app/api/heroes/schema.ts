@@ -3,80 +3,98 @@ import { z } from "zod";
 import { SkillEffectSchema } from "@/app/lib/effects";
 
 /**
- * Core enums
+ * Keep names compatible with your existing imports:
+ * - route.ts expects Rarity and SquadType
  */
-export const HeroRarity = z.enum(["SR", "SSR", "UR"]);
-export type HeroRarity = z.infer<typeof HeroRarity>;
+export const Rarity = z.enum(["SR", "SSR", "UR"]);
+export type Rarity = z.infer<typeof Rarity>;
 
-export const HeroType = z.enum(["tank", "air", "missile"]);
-export type HeroType = z.infer<typeof HeroType>;
+// "SquadType" in your catalog is really the troop type: tank/air/missile
+export const SquadType = z.enum(["tank", "air", "missile"]);
+export type SquadType = z.infer<typeof SquadType>;
 
 /**
- * Skill type (your catalog already uses this)
+ * Newer internal-friendly names (aliases)
+ * (kept so other code can use HeroRarity/HeroType if desired)
+ */
+export const HeroRarity = Rarity;
+export type HeroRarity = Rarity;
+
+export const HeroType = SquadType;
+export type HeroType = SquadType;
+
+/**
+ * Skill type (your catalog uses this)
  */
 export const HeroSkillType = z.enum(["active", "passive", "ultimate", "special", "unknown"]);
 export type HeroSkillType = z.infer<typeof HeroSkillType>;
 
 /**
- * Skills
- * - `type` is REQUIRED because your catalog uses it already.
- * - `effects` remains OPTIONAL and can be filled gradually.
+ * Skill schema
+ * - includes `type` (active/passive/etc.)
+ * - includes optional `effects` for buff/debuff modeling
  */
 export const HeroSkillSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
     type: HeroSkillType,
-
-    /**
-     * Optional effects (buff/debuff/control/etc.)
-     * truths-only: what the skill does conceptually, not scaling yet
-     */
     effects: z.array(SkillEffectSchema).optional(),
-
     note: z.string().optional(),
   })
   .strict();
 export type HeroSkill = z.infer<typeof HeroSkillSchema>;
 
 /**
- * Optional traits / extras / passives like Super Sensing / Special Tactics / Field Combat
- * Your catalog appears to reference inherentTraitIds, so we support that too.
+ * Promotion rule schema (keeps your catalog valid)
+ * If you currently store promotionRules: [] this will accept it.
  */
-export const HeroExtraSchema = z
+export const PromotionRuleSchema = z
   .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-
-    effects: z.array(SkillEffectSchema).optional(),
+    season: z.union([z.number().int().positive(), z.literal("unknown")]).optional(),
+    fromRarity: Rarity.optional(),
+    toRarity: Rarity.optional(),
     note: z.string().optional(),
   })
   .strict();
-export type HeroExtra = z.infer<typeof HeroExtraSchema>;
+export type PromotionRule = z.infer<typeof PromotionRuleSchema>;
 
 /**
- * Hero definition (truths)
+ * Hero schema matching your existing catalog shape.
+ *
+ * You currently have:
+ *  - squadType
+ *  - roles/tags fields
+ *  - inherentTraitIds
+ *  - skills
+ *  - promotionRules
+ *
+ * We also allow `type` optionally (some older code used type instead of squadType)
  */
 export const HeroSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
-    rarity: HeroRarity,
-    type: HeroType,
+    rarity: Rarity,
 
-    // Your known static skills
-    skills: z.array(HeroSkillSchema).min(1),
+    // Your catalog uses squadType: "tank" | "air" | "missile"
+    squadType: SquadType,
 
-    /**
-     * If you’re already using traits, keep these:
-     * - inherentTraitIds: references to truthy trait definitions
-     */
+    // Optional legacy/alternate field name:
+    type: SquadType.optional(),
+
+    // Optional metadata you’re already putting in catalog:
+    primaryRole: z.string().optional(),
+    secondaryRoles: z.array(z.string()).optional(),
+    damageProfile: z.string().optional(),
+    utilityTags: z.array(z.string()).optional(),
+
     inherentTraitIds: z.array(z.string().min(1)).optional(),
 
-    /**
-     * Optional extras/passives if you store them directly on the hero
-     */
-    extras: z.array(HeroExtraSchema).optional(),
+    skills: z.array(HeroSkillSchema).min(1),
+
+    // Your catalog has promotionRules: [] for many heroes
+    promotionRules: z.array(PromotionRuleSchema).optional(),
 
     note: z.string().optional(),
   })
@@ -84,7 +102,7 @@ export const HeroSchema = z
 export type Hero = z.infer<typeof HeroSchema>;
 
 /**
- * Catalog
+ * Catalog schema
  */
 export const HeroCatalogSchema = z
   .object({
@@ -93,5 +111,4 @@ export const HeroCatalogSchema = z
     notes: z.string().optional(),
   })
   .strict();
-
 export type HeroCatalog = z.infer<typeof HeroCatalogSchema>;
