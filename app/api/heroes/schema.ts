@@ -1,81 +1,84 @@
 // app/api/heroes/schema.ts
 import { z } from "zod";
+import { SkillEffectSchema } from "@/app/lib/effects";
 
-export const Rarity = z.enum(["SR", "SSR", "UR"]);
-export const SquadType = z.enum(["tank", "air", "missile"]);
+/**
+ * Core enums
+ */
+export const HeroRarity = z.enum(["SR", "SSR", "UR"]);
+export type HeroRarity = z.infer<typeof HeroRarity>;
 
-export const MechanicRole = z.enum([
-  "damage",
-  "tank",
-  "healer",
-  "buffer",
-  "debuffer",
-  "control",
-  "support",
-]);
+export const HeroType = z.enum(["tank", "air", "missile"]);
+export type HeroType = z.infer<typeof HeroType>;
 
-export const DamageProfile = z.enum([
-  "singleTarget",
-  "aoe",
-  "mixed",
-  "dot",
-  "burst",
-  "unknown",
-]);
+/**
+ * Skills
+ * - effects is OPTIONAL and can be added gradually as you learn what each skill does.
+ * - scaling numbers are NOT required yet (use "scales" in effects.ts if needed later).
+ */
+export const HeroSkillSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
 
-export const SkillType = z.enum(["active", "passive", "ultimate"]);
+    /**
+     * Optional effects (buff/debuff/control/etc.)
+     * This is truths-only: what the skill does conceptually, not player-specific numbers.
+     */
+    effects: z.array(SkillEffectSchema).optional(),
 
-export const TraitSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  effect: z.object({
-    stats: z.object({
-      hpPct: z.number().optional(),
-      atkPct: z.number().optional(),
-      defPct: z.number().optional(),
-    }),
-    summary: z.string(),
-  }),
-});
+    note: z.string().optional(),
+  })
+  .strict();
+export type HeroSkill = z.infer<typeof HeroSkillSchema>;
 
-export const SkillSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: SkillType,
-  slot: z.number().int().min(1).max(4).optional(),
-  notes: z.string().optional(),
-});
+/**
+ * Hero definition (truths)
+ */
+export const HeroSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    rarity: HeroRarity,
+    type: HeroType,
 
-export const PromotionRuleSchema = z.object({
-  toRarity: Rarity,
-  season: z.number(),
-  permanentIfChosen: z.boolean(),
-  traitReplacesId: z.string().optional(),
-  traitGainedId: z.string().optional(),
-  notes: z.string().optional(),
-});
+    // Your known static skill list
+    skills: z.array(HeroSkillSchema).min(1),
 
-export const HeroSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  rarity: Rarity,
-  squadType: SquadType,
+    /**
+     * Optional: extras/passives like Super Sensing / Special Tactics / Field Combat.
+     * If you already model this differently, you can remove this block.
+     */
+    extras: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            name: z.string().min(1),
 
-  primaryRole: MechanicRole,
-  secondaryRoles: z.array(MechanicRole).default([]),
-  damageProfile: DamageProfile.default("unknown"),
-  utilityTags: z.array(z.string()).default([]),
+            // Optional effects for passive/extras too.
+            effects: z.array(SkillEffectSchema).optional(),
 
-  skills: z.array(SkillSchema),
-  inherentTraitIds: z.array(z.string()).default([]),
-  promotionRules: z.array(PromotionRuleSchema).default([]),
-});
+            note: z.string().optional(),
+          })
+          .strict()
+      )
+      .optional(),
 
-export const HeroCatalogSchema = z.object({
-  version: z.string(),
-  traits: z.array(TraitSchema),
-  heroes: z.array(HeroSchema),
-});
+    note: z.string().optional(),
+  })
+  .strict();
+export type Hero = z.infer<typeof HeroSchema>;
 
+/**
+ * Catalog
+ */
+export const HeroCatalogSchema = z
+  .object({
+    version: z.string().min(1),
+    heroes: z.array(HeroSchema).min(1),
+    notes: z.string().optional(),
+  })
+  .strict();
 
 export type HeroCatalog = z.infer<typeof HeroCatalogSchema>;
