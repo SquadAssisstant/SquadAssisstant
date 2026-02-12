@@ -30,13 +30,8 @@ export const HeroSkillSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
-
-    // your catalog includes this
     type: HeroSkillType,
-
-    // optional; fill later as you map buffs/debuffs
     effects: z.array(SkillEffectSchema).optional(),
-
     note: z.string().optional(),
   })
   .strict();
@@ -47,25 +42,47 @@ export type HeroSkill = z.infer<typeof HeroSkillSchema>;
  */
 export const PromotionRuleSchema = z
   .object({
-    // e.g. season: 1
     season: z.union([z.number().int().positive(), z.literal("unknown")]).optional(),
-
     fromRarity: Rarity.optional(),
     toRarity: Rarity.optional(),
-
-    // your catalog includes these
     permanentIfChosen: z.boolean().optional(),
     traitReplacesId: z.string().min(1).optional(),
     traitGainedId: z.string().min(1).optional(),
-
-    // your catalog uses `notes` (plural)
     notes: z.string().optional(),
-
-    // allow legacy singular too
     note: z.string().optional(),
   })
   .strict();
 export type PromotionRule = z.infer<typeof PromotionRuleSchema>;
+
+/**
+ * Traits (your catalog has top-level traits like Super Sensing)
+ * Matches shape:
+ *  { id, name, effect: { stats: { hpPct, atkPct, defPct }, summary } }
+ */
+export const TraitStatsSchema = z
+  .object({
+    hpPct: z.number(),
+    atkPct: z.number(),
+    defPct: z.number(),
+  })
+  .strict();
+
+export const TraitEffectSchema = z
+  .object({
+    stats: TraitStatsSchema,
+    summary: z.string().min(1),
+  })
+  .strict();
+
+export const TraitSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    effect: TraitEffectSchema,
+    note: z.string().optional(),
+  })
+  .strict();
+export type Trait = z.infer<typeof TraitSchema>;
 
 /**
  * Hero definition (truths) — matches your existing catalog shape
@@ -101,12 +118,19 @@ export type Hero = z.infer<typeof HeroSchema>;
 
 /**
  * Catalog
+ * Add `traits` to match your top-level HERO_CATALOG object.
  */
 export const HeroCatalogSchema = z
   .object({
     version: z.string().min(1),
+
+    // your catalog includes traits
+    traits: z.array(TraitSchema).optional(),
+
     heroes: z.array(HeroSchema).min(1),
     notes: z.string().optional(),
   })
   .strict();
+
 export type HeroCatalog = z.infer<typeof HeroCatalogSchema>;
+
