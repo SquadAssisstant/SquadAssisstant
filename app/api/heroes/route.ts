@@ -29,7 +29,7 @@ export function GET(req: Request) {
     primaryRole: h.primaryRole,
     secondaryRoles: h.secondaryRoles,
     damageProfile: h.damageProfile,
-    hasPromotion: h.promotionRules.length > 0,
+    hasPromotion: (h.promotionRules?.length ?? 0) > 0,
     inherentTraitIds: h.inherentTraitIds,
     skillsCount: h.skills.length,
   }));
