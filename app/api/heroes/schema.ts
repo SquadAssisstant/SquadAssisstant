@@ -133,4 +133,3 @@ export const HeroCatalogSchema = z
   .strict();
 
 export type HeroCatalog = z.infer<typeof HeroCatalogSchema>;
-
