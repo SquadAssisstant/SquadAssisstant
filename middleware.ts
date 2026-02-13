@@ -1,46 +1,66 @@
 // middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { sessionCookieName, verifySession } from "@/lib/session";
 
-const PUBLIC_PREFIXES = [
-  "/login",
-  "/api/auth/login",
-  "/api/auth/register",
-  "/api/auth/logout",
-  "/api/auth/me",
-  "/_next",
-  "/favicon.ico",
-];
+function isPublicPath(pathname: string) {
+  // Public API routes
+  if (
+    pathname === "/api/heroes" ||
+    pathname.startsWith("/api/heroes/") ||
+    pathname === "/api/gear" ||
+    pathname === "/api/drone" ||
+    pathname === "/api/overlord" ||
+    pathname.startsWith("/api/auth/") || // ✅ allow auth endpoints
+    pathname === "/api/chat" ||          // keep template chat if you want
+    pathname === "/"
+  ) {
+    return true;
+  }
 
-export function middleware(req: NextRequest) {
+  // Static / Next internals
+  if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) return true;
+
+  // Allow assets
+  if (pathname.match(/\.(png|jpg|jpeg|webp|svg|ico|css|js)$/)) return true;
+
+  return false;
+}
+
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(";").map((p) => p.trim());
+  for (const p of parts) {
+    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
+  }
+  return undefined;
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  const isPublic = PUBLIC_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+  if (isPublicPath(pathname)) return NextResponse.next();
 
-  if (isPublic) return NextResponse.next();
+  // Protect only the routes that must be authed:
+  // /api/player/* , /api/uploads/* , /api/battle/*
+  const mustAuth =
+    pathname.startsWith("/api/player/") ||
+    pathname.startsWith("/api/uploads/") ||
+    pathname.startsWith("/api/battle/");
 
-  const hasSession = !!req.cookies.get("sa_session")?.value;
+  if (!mustAuth) return NextResponse.next();
 
-  // Protect API routes
-  if (pathname.startsWith("/api/")) {
-    if (!hasSession) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  try {
+    await verifySession(token);
     return NextResponse.next();
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Protect pages
-  if (!hasSession) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!.*\\.).*)"],
+  matcher: ["/api/:path*"],
 };
