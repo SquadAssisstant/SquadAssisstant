@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
     setLoading(true);
@@ -36,64 +36,55 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 520, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>SquadAssistant — Login</h1>
+    <div className="min-h-screen bg-black text-slate-100 flex items-center justify-center p-4">
+      <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-slate-700/50 bg-slate-950/40 p-5">
+        <div className="text-lg font-semibold tracking-widest text-fuchsia-200">LOGIN</div>
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span>Username</span>
+        <label className="mt-4 block text-xs uppercase tracking-widest text-slate-400">Username</label>
+        <input
+          className="mt-2 w-full rounded-xl border border-slate-700/60 bg-black/40 p-3"
+          autoCapitalize="none"
+          autoCorrect="off"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+
+        <label className="mt-4 block text-xs uppercase tracking-widest text-slate-400">Password</label>
+        <div className="mt-2 flex gap-2">
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoCapitalize="none"
-            autoCorrect="off"
-            style={{ padding: 10, border: "1px solid #444", borderRadius: 10 }}
+            className="w-full rounded-xl border border-slate-700/60 bg-black/40 p-3"
+            type={showPw ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </label>
+          <button
+            type="button"
+            onClick={() => setShowPw((v) => !v)}
+            className="rounded-xl border border-slate-700/60 bg-black/40 px-4 text-xs uppercase tracking-widest"
+          >
+            {showPw ? "Hide" : "Show"}
+          </button>
+        </div>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span>Password</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type={showPw ? "text" : "password"}
-              style={{ padding: 10, border: "1px solid #444", borderRadius: 10, flex: 1 }}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowPw((v) => !v)}
-              style={{ padding: "10px 12px", border: "1px solid #444", borderRadius: 10 }}
-            >
-              {showPw ? "Hide" : "Show"}
-            </button>
-          </div>
-        </label>
-
-        <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={rememberDevice}
-            onChange={(e) => setRememberDevice(e.target.checked)}
-          />
-          <span>Remember device</span>
+        <label className="mt-4 flex items-center gap-2 text-sm text-slate-300/80">
+          <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} />
+          Remember device
         </label>
 
         <button
           disabled={loading}
-          type="submit"
-          style={{ padding: 12, borderRadius: 12, border: "1px solid #444" }}
+          className="mt-5 w-full rounded-xl border border-fuchsia-500/30 bg-fuchsia-950/20 p-3 text-xs uppercase tracking-widest hover:border-fuchsia-400/50 transition"
         >
           {loading ? "Logging in..." : "Login"}
         </button>
 
-        <a href="/register" style={{ textDecoration: "underline" }}>
+        <a href="/register" className="mt-4 block text-center text-sm text-cyan-200/80 underline">
           Create an account
         </a>
 
-        {msg ? <div style={{ padding: 10, border: "1px solid #444", borderRadius: 10 }}>{msg}</div> : null}
+        {msg ? <div className="mt-4 rounded-xl border border-slate-700/60 bg-black/40 p-3 text-sm">{msg}</div> : null}
       </form>
     </div>
   );
