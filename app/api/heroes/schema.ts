@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SkillEffectSchema } from "@/app/lib/effects";
 
 /**
- * Compatibility exports (your routes import these names)
+ * Keep these export names because your routes already import them.
  */
 export const Rarity = z.enum(["SR", "SSR", "UR"]);
 export type Rarity = z.infer<typeof Rarity>;
@@ -12,7 +12,7 @@ export const SquadType = z.enum(["tank", "air", "missile"]);
 export type SquadType = z.infer<typeof SquadType>;
 
 /**
- * Friendly alias exports (optional use elsewhere)
+ * Optional aliases (handy elsewhere)
  */
 export const HeroRarity = Rarity;
 export type HeroRarity = Rarity;
@@ -21,11 +21,14 @@ export const HeroType = SquadType;
 export type HeroType = SquadType;
 
 /**
- * Skills
+ * Skill types (your catalog uses active/passive/etc.)
  */
 export const HeroSkillType = z.enum(["active", "passive", "ultimate", "special", "unknown"]);
 export type HeroSkillType = z.infer<typeof HeroSkillType>;
 
+/**
+ * Skill schema: now supports optional effects
+ */
 export const HeroSkillSchema = z
   .object({
     id: z.string().min(1),
@@ -38,16 +41,19 @@ export const HeroSkillSchema = z
 export type HeroSkill = z.infer<typeof HeroSkillSchema>;
 
 /**
- * Promotion rules (matches your catalog objects)
+ * Promotion rules: matches what your catalog includes for Mason/Violet/etc.
  */
 export const PromotionRuleSchema = z
   .object({
     season: z.union([z.number().int().positive(), z.literal("unknown")]).optional(),
     fromRarity: Rarity.optional(),
     toRarity: Rarity.optional(),
+
     permanentIfChosen: z.boolean().optional(),
     traitReplacesId: z.string().min(1).optional(),
     traitGainedId: z.string().min(1).optional(),
+
+    // your catalog used `notes` (plural). keep both to be safe.
     notes: z.string().optional(),
     note: z.string().optional(),
   })
@@ -55,8 +61,8 @@ export const PromotionRuleSchema = z
 export type PromotionRule = z.infer<typeof PromotionRuleSchema>;
 
 /**
- * Traits (your catalog has top-level traits like Super Sensing)
- * Matches shape:
+ * Trait schema: matches your catalog top-level traits.
+ * Example:
  *  { id, name, effect: { stats: { hpPct, atkPct, defPct }, summary } }
  */
 export const TraitStatsSchema = z
@@ -85,7 +91,8 @@ export const TraitSchema = z
 export type Trait = z.infer<typeof TraitSchema>;
 
 /**
- * Hero definition (truths) — matches your existing catalog shape
+ * Hero schema: matches your catalog hero objects.
+ * NOTE: we keep `squadType` as required because your catalog uses it everywhere.
  */
 export const HeroSchema = z
   .object({
@@ -93,13 +100,9 @@ export const HeroSchema = z
     name: z.string().min(1),
     rarity: Rarity,
 
-    // your catalog uses squadType
     squadType: SquadType,
 
-    // allow optional legacy field name
-    type: SquadType.optional(),
-
-    // metadata fields your catalog already includes
+    // metadata fields you already use
     primaryRole: z.string().optional(),
     secondaryRoles: z.array(z.string()).optional(),
     damageProfile: z.string().optional(),
@@ -109,6 +112,7 @@ export const HeroSchema = z
 
     skills: z.array(HeroSkillSchema).min(1),
 
+    // can be [] or omitted
     promotionRules: z.array(PromotionRuleSchema).optional(),
 
     note: z.string().optional(),
@@ -117,16 +121,12 @@ export const HeroSchema = z
 export type Hero = z.infer<typeof HeroSchema>;
 
 /**
- * Catalog
- * Add `traits` to match your top-level HERO_CATALOG object.
+ * Catalog schema: includes traits + heroes
  */
 export const HeroCatalogSchema = z
   .object({
     version: z.string().min(1),
-
-    // your catalog includes traits
     traits: z.array(TraitSchema).optional(),
-
     heroes: z.array(HeroSchema).min(1),
     notes: z.string().optional(),
   })
