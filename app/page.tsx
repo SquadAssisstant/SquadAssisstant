@@ -298,9 +298,7 @@ function GatePromptModal({
   if (!open || !kind) return null;
 
   const question =
-    kind === "drone"
-      ? "Has your server reached or passed Day 85 for the game?"
-      : "Has your server reached or passed S2 Day 89?";
+    kind === "drone" ? "Has your server reached or passed Day 85 for the game?" : "Has your server reached or passed S2 Day 89?";
 
   return (
     <div className="fixed inset-0 z-50">
@@ -310,9 +308,7 @@ function GatePromptModal({
         <div className="rounded-3xl border border-slate-700/50 bg-black/65 backdrop-blur-xl p-6 shadow-[0_0_60px_rgba(168,85,247,.12)]">
           <div className="text-xs uppercase tracking-[0.3em] text-slate-400/80">unlock check</div>
           <div className="mt-2 text-lg text-slate-100/90">{question}</div>
-          <div className="mt-2 text-sm text-slate-300/70">
-            This gates UI so you only see systems your server has unlocked.
-          </div>
+          <div className="mt-2 text-sm text-slate-300/70">This gates UI so you only see systems your server has unlocked.</div>
 
           <div className="mt-6 flex items-center justify-end gap-3">
             <button
@@ -458,6 +454,10 @@ export default function Home() {
   const [droneModalOpen, setDroneModalOpen] = useState(false);
   const [overlordModalOpen, setOverlordModalOpen] = useState(false);
 
+  // ✅ NEW
+  const [battleAnalyzerOpen, setBattleAnalyzerOpen] = useState(false);
+  const [optimizerOpen, setOptimizerOpen] = useState(false);
+
   const activeSquad = useMemo(() => squads.find((s) => s.slot === activeSlot) ?? null, [squads, activeSlot]);
 
   return (
@@ -492,6 +492,10 @@ export default function Home() {
 
       <SimpleSystemModal title="Drone" open={droneModalOpen} onClose={() => setDroneModalOpen(false)} />
       <SimpleSystemModal title="Overlord" open={overlordModalOpen} onClose={() => setOverlordModalOpen(false)} />
+
+      {/* ✅ NEW */}
+      <SimpleSystemModal title="Battle Reports Analyzer" open={battleAnalyzerOpen} onClose={() => setBattleAnalyzerOpen(false)} />
+      <SimpleSystemModal title="Optimizer" open={optimizerOpen} onClose={() => setOptimizerOpen(false)} />
 
       {/* 3-column layout */}
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[260px_1fr_260px]">
@@ -537,19 +541,18 @@ export default function Home() {
               placeholder="Ask about heroes, skills, star gates, gear, drone, or gorilla…"
               emptyStateComponent={
                 <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-                  <div className="mt-2 text-xs text-slate-400/80">
-                    Try: “Explain drone components and what they boost.”
-                  </div>
+                  <div className="mt-2 text-xs text-slate-400/80">Try: “Explain drone components and what they boost.”</div>
                 </div>
               }
             />
           </div>
 
-          {/* Global optimizer entry under chat */}
-          <a
-            href="/optimizer"
+          {/* ✅ Global optimizer entry under chat now opens modal */}
+          <button
+            type="button"
+            onClick={() => setOptimizerOpen(true)}
             className={cn(
-              "block rounded-2xl border border-cyan-400/25 bg-cyan-950/15 p-4",
+              "block w-full text-left rounded-2xl border border-cyan-400/25 bg-cyan-950/15 p-4",
               "hover:border-cyan-300/35 hover:bg-cyan-950/20 transition",
               "shadow-[0_0_30px_rgba(34,211,238,.08)]"
             )}
@@ -557,9 +560,7 @@ export default function Home() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-sm tracking-wide text-cyan-200/90">Optimizer Workspace</div>
-                <div className="mt-1 text-xs text-slate-300/70">
-                  Full plug-and-play (profile-wide) — coming next
-                </div>
+                <div className="mt-1 text-xs text-slate-300/70">Full plug-and-play (profile-wide) — coming next</div>
               </div>
               <div className="text-lg">📊</div>
             </div>
@@ -574,7 +575,7 @@ export default function Home() {
                 </div>
               ))}
             </div>
-          </a>
+          </button>
         </main>
 
         {/* Right: tools */}
@@ -597,10 +598,12 @@ export default function Home() {
             ]}
           />
 
+          {/* ✅ Battle Reports now opens like squads */}
           <AppGroupCard
-            title="Battle Reports"
-            subtitle="Player-specific ingestion later"
-            disabled
+            title="Battle Reports Analyzer"
+            subtitle="Analyze one report or grouped sets"
+            badge="beta"
+            onClick={() => setBattleAnalyzerOpen(true)}
             icons={[
               { label: "Upload", emoji: "📷" },
               { label: "OCR", emoji: "🔤" },
@@ -609,7 +612,7 @@ export default function Home() {
               { label: "Redact", emoji: "🫥" },
               { label: "Stats", emoji: "📊" },
               { label: "Match", emoji: "🧩" },
-              { label: "Export", emoji: "📤" },
+              { label: "Explain", emoji: "🧠" },
             ]}
           />
 
