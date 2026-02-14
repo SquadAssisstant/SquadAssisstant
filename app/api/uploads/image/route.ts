@@ -23,16 +23,7 @@ async function requireSessionFromReq(req: Request) {
   }
 }
 
-// What we "sort" an image into (v1)
-const UploadKind = [
-  "hero_profile", // <- your case
-  "battle_report",
-  "drone",
-  "overlord",
-  "gear",
-  "unknown",
-] as const;
-
+const UploadKind = ["hero_profile", "battle_report", "drone", "overlord", "gear", "unknown"] as const;
 type UploadKind = (typeof UploadKind)[number];
 
 type Provenance = "screenshot" | "camera_photo" | "web_image" | "ai_or_edited" | "unknown";
@@ -87,28 +78,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Only image uploads supported for now" }, { status: 400 });
   }
 
-  // Optional: UI can send "kind" to force sorting (recommended)
   const declaredKind = normalizeKind(form.get("kind"));
 
   const buf = Buffer.from(await file.arrayBuffer());
   const ext = guessExtFromMime(file.type);
 
-  // No timestamps in filename/path (stable + privacy)
   const uuid = crypto.randomUUID();
   const baseName = safePathSegment(file.name || "upload");
   const objectPath = `profiles/${s.profileId}/images/${uuid}_${baseName}.${ext}`;
 
-  const sb = supabaseAdmin();
+  // ✅ IMPORTANT: cast to any to avoid the "never" .from typing in production builds
+  const sb = supabaseAdmin() as any;
 
-  const upload = await sb.storage
-    .from("uploads")
-    .upload(objectPath, buf, { contentType: file.type, upsert: false });
+  const upload = await sb.storage.from("uploads").upload(objectPath, buf, {
+    contentType: file.type,
+    upsert: false,
+  });
 
   if (upload.error) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
 
-  // EXIF/XMP parse (best-effort). We do NOT rely on it for "sorting".
   let meta: any = null;
   try {
     meta = await exifr.parse(buf, { tiff: true, exif: true, xmp: true, gps: true, icc: false, iptc: false });
@@ -118,15 +108,11 @@ export async function POST(req: Request) {
 
   const provenance = classifyProvenance(meta, { mime: file.type, size: file.size, name: file.name || "" });
 
-  // Sorting result (v1)
-  const kind = declaredKind; // forced by UI; otherwise "unknown"
+  const kind = declaredKind;
   const kindConfidence = declaredKind === "unknown" ? 0.2 : 1.0;
   const kindSignals =
-    declaredKind === "unknown"
-      ? ["No declared kind provided"]
-      : ["User-declared upload kind"];
+    declaredKind === "unknown" ? ["No declared kind provided"] : ["User-declared upload kind"];
 
-  // Store as a "report" record for now (you can rename later)
   const parsed = {
     upload: {
       filename: file.name,
@@ -143,8 +129,8 @@ export async function POST(req: Request) {
     status: "uploaded",
   };
 
-  // NOTE: This assumes your existing table is battle_reports (you used it earlier).
-  // If your table name is different, tell me and I’ll adjust.
+  // This is still writing into battle_reports (as your current setup does).
+  // We'll split this later when we implement 14-page battle report containers.
   const ins = await sb
     .from("battle_reports")
     .insert({
