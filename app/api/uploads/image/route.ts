@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { guessExtFromMime, safePathSegment } from "@/lib/upload";
 import * as exifr from "exifr";
-import crypto from "crypto";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
@@ -23,6 +22,18 @@ async function requireSessionFromReq(req: Request) {
     return null;
   }
 }
+
+// What we "sort" an image into (v1)
+const UploadKind = [
+  "hero_profile", // <- your case
+  "battle_report",
+  "drone",
+  "overlord",
+  "gear",
+  "unknown",
+] as const;
+
+type UploadKind = (typeof UploadKind)[number];
 
 type Provenance = "screenshot" | "camera_photo" | "web_image" | "ai_or_edited" | "unknown";
 
@@ -54,8 +65,10 @@ function classifyProvenance(meta: any, file: { mime: string; size: number; name:
   return { label: "unknown" as Provenance, confidence: 0.4, signals: [] as string[] };
 }
 
-function sha256Hex(buf: Buffer) {
-  return crypto.createHash("sha256").update(buf).digest("hex");
+function normalizeKind(input: unknown): UploadKind {
+  if (!input) return "unknown";
+  const v = String(input).trim().toLowerCase();
+  return (UploadKind as readonly string[]).includes(v) ? (v as UploadKind) : "unknown";
 }
 
 export async function POST(req: Request) {
@@ -70,66 +83,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing file field named 'file'" }, { status: 400 });
   }
 
-  // Optional metadata fields (client can send these)
-  const uploadKindRaw = (form.get("kind") ?? "unknown")?.toString();
-  const variantKeyRaw = (form.get("variantKey") ?? "default")?.toString();
-
-  const uploadKind =
-    ["battle_report", "hero_page", "gear_page", "drone_page", "overlord_page", "unknown"].includes(uploadKindRaw)
-      ? uploadKindRaw
-      : "unknown";
-
-  // Keep variantKey simple + safe
-  const variantKey = safePathSegment(variantKeyRaw || "default");
-
   if (!file.type.startsWith("image/")) {
     return NextResponse.json({ error: "Only image uploads supported for now" }, { status: 400 });
   }
 
+  // Optional: UI can send "kind" to force sorting (recommended)
+  const declaredKind = normalizeKind(form.get("kind"));
+
   const buf = Buffer.from(await file.arrayBuffer());
-  const contentHash = sha256Hex(buf);
   const ext = guessExtFromMime(file.type);
 
-  const sb: any = supabaseAdmin();
-
-  // ✅ DEDUPE CHECK (don’t store exact repeats)
-  // We scan your recent reports and compare parsed.upload.contentHash + kind + variantKey
-  const recent = await sb
-    .from("battle_reports")
-    .select("id, parsed")
-    .eq("profile_id", s.profileId)
-    .order("created_at", { ascending: false })
-    .limit(300);
-
-  if (recent.error) {
-    return NextResponse.json({ error: recent.error.message }, { status: 500 });
-  }
-
-  const found = (recent.data ?? []).find((r: any) => {
-    const u = r?.parsed?.upload;
-    return u?.contentHash === contentHash && u?.kind === uploadKind && u?.variantKey === variantKey;
-  });
-
-  if (found) {
-    // Duplicate: return the existing report; do not upload/store again
-    return NextResponse.json({
-      ok: true,
-      deduped: true,
-      reportId: found.id,
-      kind: uploadKind,
-      variantKey,
-      contentHash,
-    });
-  }
-
-  // Not a duplicate → store image and create report row
-  const now = new Date();
-  const yyyy = now.getUTCFullYear();
-  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(now.getUTCDate()).padStart(2, "0");
-
+  // No timestamps in filename/path (stable + privacy)
+  const uuid = crypto.randomUUID();
   const baseName = safePathSegment(file.name || "upload");
-  const objectPath = `profiles/${s.profileId}/images/${yyyy}-${mm}-${dd}/${Date.now()}_${baseName}.${ext}`;
+  const objectPath = `profiles/${s.profileId}/images/${uuid}_${baseName}.${ext}`;
+
+  const sb = supabaseAdmin();
 
   const upload = await sb.storage
     .from("uploads")
@@ -139,7 +108,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
 
-  // EXIF/XMP parse (best-effort)
+  // EXIF/XMP parse (best-effort). We do NOT rely on it for "sorting".
   let meta: any = null;
   try {
     meta = await exifr.parse(buf, { tiff: true, exif: true, xmp: true, gps: true, icc: false, iptc: false });
@@ -149,6 +118,15 @@ export async function POST(req: Request) {
 
   const provenance = classifyProvenance(meta, { mime: file.type, size: file.size, name: file.name || "" });
 
+  // Sorting result (v1)
+  const kind = declaredKind; // forced by UI; otherwise "unknown"
+  const kindConfidence = declaredKind === "unknown" ? 0.2 : 1.0;
+  const kindSignals =
+    declaredKind === "unknown"
+      ? ["No declared kind provided"]
+      : ["User-declared upload kind"];
+
+  // Store as a "report" record for now (you can rename later)
   const parsed = {
     upload: {
       filename: file.name,
@@ -156,17 +134,17 @@ export async function POST(req: Request) {
       size: file.size,
       storageBucket: "uploads",
       storagePath: objectPath,
-
-      // ✅ Deduping + progress variance control
-      kind: uploadKind,
-      variantKey,
-      contentHash,
     },
-    exif: meta ?? null,
     provenance,
+    kind,
+    kindConfidence,
+    kindSignals,
+    declaredKind: declaredKind === "unknown" ? null : declaredKind,
     status: "uploaded",
   };
 
+  // NOTE: This assumes your existing table is battle_reports (you used it earlier).
+  // If your table name is different, tell me and I’ll adjust.
   const ins = await sb
     .from("battle_reports")
     .insert({
@@ -184,12 +162,11 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    deduped: false,
     reportId: ins.data.id,
     storagePath: objectPath,
-    kind: uploadKind,
-    variantKey,
-    contentHash,
+    kind,
+    kindConfidence,
     provenance,
+    allowedKinds: UploadKind,
   });
 }
