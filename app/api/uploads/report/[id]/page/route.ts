@@ -33,56 +33,87 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!form) return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
 
   const file = form.get("file");
-  if (!(file instanceof File)) return NextResponse.json({ error: "Missing file field 'file'" }, { status: 400 });
-  if (!file.type.startsWith("image/")) return NextResponse.json({ error: "Only images supported" }, { status: 400 });
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "Missing file field named 'file'" }, { status: 400 });
+  }
+  if (!file.type.startsWith("image/")) {
+    return NextResponse.json({ error: "Only image uploads supported" }, { status: 400 });
+  }
 
-  const pageIndexRaw = form.get("pageIndex");
-  const pageIndex = pageIndexRaw ? Number(pageIndexRaw) : 0;
+  const rawIndex = form.get("pageIndex");
+  const pageIndex = Number(rawIndex);
+  if (!Number.isInteger(pageIndex) || pageIndex < 0) {
+    return NextResponse.json({ error: "Missing/invalid pageIndex" }, { status: 400 });
+  }
 
   const buf = Buffer.from(await file.arrayBuffer());
+  const bytes = buf.byteLength;
   const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
-
   const ext = guessExtFromMime(file.type);
-  const baseName = safePathSegment(file.name || "page");
-  const objectPath = `profiles/${s.profileId}/battle_reports/${reportId}/${String(pageIndex).padStart(2, "0")}_${sha256.slice(
-    0,
-    10
-  )}_${baseName}.${ext}`;
 
-  const sb = supabaseAdmin();
+  const uuid = crypto.randomUUID();
+  const baseName = safePathSegment(file.name || `page_${pageIndex}`);
+  const storageBucket = "uploads";
+  const storagePath = `profiles/${s.profileId}/reports/${reportId}/${pageIndex}_${uuid}_${baseName}.${ext}`;
+
+  // ✅ critical: cast to any so .from() doesn't type-collapse to never
+  const sb = supabaseAdmin() as any;
 
   // Upload to storage
-  const up = await sb.storage.from("uploads").upload(objectPath, buf, {
+  const up = await sb.storage.from(storageBucket).upload(storagePath, buf, {
     contentType: file.type,
     upsert: false,
   });
 
   if (up.error) {
-    // If it's already there, we still want to dedupe gracefully.
-    // But storage errors vary; keep it simple for now.
     return NextResponse.json({ error: up.error.message }, { status: 500 });
   }
 
-  // Insert page record (dedupe via unique index on report_id+sha256)
+  // Insert page record (dedupe via unique index on report_id+sha256 if you added it)
   const ins = await sb
     .from("battle_report_pages")
     .insert({
       report_id: reportId,
       profile_id: s.profileId,
-      storage_bucket: "uploads",
-      storage_path: objectPath,
-      page_index: Number.isFinite(pageIndex) ? pageIndex : 0,
+      storage_bucket: storageBucket,
+      storage_path: storagePath,
+      page_index: pageIndex,
       sha256,
       mime: file.type,
-      bytes: buf.length,
+      bytes,
     })
     .select("id")
     .single();
 
+  // If duplicate (unique constraint), return success but indicate deduped
   if (ins.error) {
-    // Likely duplicate page. Treat as OK and return deduped.
-    return NextResponse.json({ ok: true, deduped: true, sha256, storagePath: objectPath });
+    const msg = String(ins.error.message || "");
+    const code = String(ins.error.code || "");
+    const looksDuplicate =
+      code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
+
+    if (looksDuplicate) {
+      return NextResponse.json({
+        ok: true,
+        reportId,
+        pageIndex,
+        sha256,
+        storagePath,
+        deduped: true,
+      });
+    }
+
+    return NextResponse.json({ error: ins.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, pageId: ins.data.id, sha256, storagePath: objectPath });
+  return NextResponse.json({
+    ok: true,
+    reportId,
+    pageId: ins.data.id,
+    pageIndex,
+    sha256,
+    storagePath,
+    bytes,
+    mime: file.type,
+  });
 }
