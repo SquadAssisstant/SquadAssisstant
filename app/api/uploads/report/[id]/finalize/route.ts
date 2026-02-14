@@ -27,9 +27,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { id: reportId } = await ctx.params;
 
-  const sb = supabaseAdmin();
+  // ✅ cast to any to avoid "never" table typing during prod build
+  const sb = supabaseAdmin() as any;
 
-  // Count pages
+  // Count pages for this report (and this profile)
   const pages = await sb
     .from("battle_report_pages")
     .select("id", { count: "exact", head: true })
@@ -40,6 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const pageCount = pages.count ?? 0;
 
+  // Mark report ready
   const upd = await sb
     .from("battle_reports")
     .update({
