@@ -2,237 +2,275 @@
 
 import { useMemo, useState } from "react";
 
-type UploadKind = "battle_report" | "hero_profile" | "gear" | "drone" | "overlord" | "unknown";
+type UploadKind = "hero_profile" | "battle_report" | "drone" | "overlord" | "gear" | "unknown";
 
-type UploadResult =
-  | { ok: true; kind: UploadKind; reportId?: string; storagePath?: string; message?: string }
-  | { ok: false; kind: UploadKind; error: string };
+const KIND_OPTIONS: { value: UploadKind; label: string; hint: string }[] = [
+  { value: "battle_report", label: "Battle Report (multi-page session)", hint: "Use for 1–20 screenshots that belong to ONE battle report." },
+  { value: "hero_profile", label: "Hero Profile", hint: "Hero profile screens, gear overview, power, etc." },
+  { value: "drone", label: "Drone", hint: "Drone screens, components, combat boost, chips, etc." },
+  { value: "overlord", label: "Overlord", hint: "Gorilla/overlord training, bond, promotion, skills, etc." },
+  { value: "gear", label: "Gear", hint: "Gear inventory, gear pieces, upgrade screens, etc." },
+  { value: "unknown", label: "Unknown / Let it sit", hint: "Uploads store, but won’t appear in analyzer until sorted later." },
+];
 
-function cn(...classes: (string | false | null | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
+const MAX_FILES = 20;
+
+function uniqByNameSizeLastModified(list: File[]) {
+  const seen = new Set<string>();
+  const out: File[] = [];
+  for (const f of list) {
+    const k = `${f.name}|${f.size}|${f.lastModified}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(f);
+  }
+  return out;
 }
 
-export function UploadDocumentsForm() {
+export default function UploadDocumentsForm() {
   const [kind, setKind] = useState<UploadKind>("battle_report");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [results, setResults] = useState<UploadResult[]>([]);
+  const [log, setLog] = useState<string[]>([]);
+  const [lastReportId, setLastReportId] = useState<string | null>(null);
 
-  const maxFiles = 20;
+  const hint = useMemo(() => KIND_OPTIONS.find(k => k.value === kind)?.hint ?? "", [kind]);
 
-  const acceptHint = useMemo(() => {
-    if (kind === "battle_report") return "Up to 20 images (battle report pages).";
-    return "Up to 20 images.";
-  }, [kind]);
-
-  function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const list = Array.from(e.target.files ?? []);
-    const clipped = list.slice(0, maxFiles);
-    setFiles(clipped);
-    setResults([]);
-    setProgress(null);
+  function pushLog(line: string) {
+    setLog(prev => [line, ...prev].slice(0, 50));
   }
 
-  async function uploadSingleImage(f: File, declaredKind: UploadKind): Promise<UploadResult> {
-    const form = new FormData();
-    form.append("file", f);
-    form.append("kind", declaredKind);
+  function addPickedFiles(fileList: FileList | null) {
+    if (!fileList) return;
+    const picked = Array.from(fileList).filter(f => f.type.startsWith("image/"));
+    // append + de-dupe + cap at 20
+    const merged = uniqByNameSizeLastModified([...files, ...picked]).slice(0, MAX_FILES);
+    setFiles(merged);
+    // IMPORTANT: allow picking the same file again later by resetting the input value
+  }
 
-    const res = await fetch("/api/uploads/image", {
-      method: "POST",
-      body: form,
-    });
+  function removeFile(idx: number) {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
+  }
 
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      return { ok: false, kind: declaredKind, error: json?.error ?? `Upload failed (${res.status})` };
+  function clearAll() {
+    setFiles([]);
+    setLastReportId(null);
+    setLog([]);
+  }
+
+  async function uploadNonReport(filesToUpload: File[]) {
+    let okCount = 0;
+
+    for (const f of filesToUpload) {
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("kind", kind);
+
+      const res = await fetch("/api/uploads/image", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        pushLog(`❌ ${f.name}: ${json?.error ?? "upload failed"}`);
+        continue;
+      }
+      okCount++;
+      pushLog(`✅ ${f.name}: stored as ${json?.kind ?? kind}`);
     }
 
-    return {
-      ok: true,
-      kind: declaredKind,
-      reportId: json?.reportId,
-      storagePath: json?.storagePath,
-      message: "Uploaded",
-    };
+    pushLog(`— Done: ${okCount}/${filesToUpload.length} uploaded`);
   }
 
-  async function uploadBattleReportSession(fs: File[]): Promise<UploadResult> {
+  async function uploadBattleReportSession(filesToUpload: File[]) {
     // 1) start session
     const startRes = await fetch("/api/uploads/report/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ consent_scope: "private", kind: "battle_report" }),
+      body: JSON.stringify({ consent_scope: "private" }),
     });
-
-    const startJson = await startRes.json().catch(() => null);
+    const startJson = await startRes.json().catch(() => ({}));
     if (!startRes.ok) {
-      return { ok: false, kind: "battle_report", error: startJson?.error ?? `Start failed (${startRes.status})` };
+      pushLog(`❌ Start session failed: ${startJson?.error ?? "unknown error"}`);
+      return;
     }
 
     const reportId = startJson?.reportId as string | undefined;
     if (!reportId) {
-      return { ok: false, kind: "battle_report", error: "Start did not return reportId" };
+      pushLog("❌ Start session returned no reportId");
+      return;
     }
 
-    // 2) upload each page
-    for (let i = 0; i < fs.length; i++) {
-      const f = fs[i];
-      const form = new FormData();
-      form.append("file", f);
+    setLastReportId(reportId);
+    pushLog(`🧾 Report session started: ${reportId}`);
 
-      const pageRes = await fetch(`/api/uploads/report/${reportId}/page`, {
-        method: "POST",
-        body: form,
-      });
+    // 2) upload pages
+    let okPages = 0;
 
-      const pageJson = await pageRes.json().catch(() => null);
+    for (let idx = 0; idx < filesToUpload.length; idx++) {
+      const f = filesToUpload[idx];
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("page_index", String(idx)); // harmless if backend ignores it
+
+      const pageRes = await fetch(`/api/uploads/report/${reportId}/page`, { method: "POST", body: fd });
+      const pageJson = await pageRes.json().catch(() => ({}));
+
       if (!pageRes.ok) {
-        return {
-          ok: false,
-          kind: "battle_report",
-          error: pageJson?.error ?? `Page ${i + 1} failed (${pageRes.status})`,
-        };
+        pushLog(`❌ Page ${idx + 1} (${f.name}): ${pageJson?.error ?? "upload failed"}`);
+        continue;
       }
 
-      setProgress({ done: i + 1, total: fs.length });
+      okPages++;
+      pushLog(`✅ Page ${idx + 1}/${filesToUpload.length} (${f.name}) uploaded`);
     }
 
     // 3) finalize
     const finRes = await fetch(`/api/uploads/report/${reportId}/finalize`, { method: "POST" });
-    const finJson = await finRes.json().catch(() => null);
+    const finJson = await finRes.json().catch(() => ({}));
     if (!finRes.ok) {
-      return { ok: false, kind: "battle_report", error: finJson?.error ?? `Finalize failed (${finRes.status})` };
+      pushLog(`❌ Finalize failed: ${finJson?.error ?? "unknown error"}`);
+      pushLog(`— Pages uploaded: ${okPages}/${filesToUpload.length} (session NOT finalized)`);
+      return;
     }
 
-    return { ok: true, kind: "battle_report", reportId, message: "Battle report ready" };
+    pushLog(`🎉 Finalized report: ${reportId} (${okPages}/${filesToUpload.length} pages)`);
+    pushLog(`➡️ Open Battle Reports Analyzer — it should see this report.`);
   }
 
   async function onUpload() {
     if (busy) return;
     if (files.length === 0) {
-      setResults([{ ok: false, kind, error: "Pick at least 1 image" }]);
+      pushLog("⚠️ No images selected.");
       return;
     }
 
     setBusy(true);
-    setResults([]);
-    setProgress({ done: 0, total: files.length });
+    setLog([]);
+    setLastReportId(null);
 
     try {
-      // Battle report = grouped session (recommended)
-      if (kind === "battle_report") {
-        const r = await uploadBattleReportSession(files);
-        setResults([r]);
-        return;
-      }
+      pushLog(`Uploading ${files.length} image(s) as: ${kind}`);
 
-      // Everything else = individual uploads
-      const out: UploadResult[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const r = await uploadSingleImage(files[i], kind);
-        out.push(r);
-        setProgress({ done: i + 1, total: files.length });
+      if (kind === "battle_report") {
+        await uploadBattleReportSession(files);
+      } else {
+        await uploadNonReport(files);
       }
-      setResults(out);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-sm tracking-wide text-slate-100/90">Upload Screenshots</div>
-            <div className="mt-1 text-xs text-slate-300/70">{acceptHint}</div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-slate-400/80">Kind</label>
-            <select
-              value={kind}
-              onChange={(e) => setKind(e.target.value as UploadKind)}
-              className="rounded-xl border border-slate-700/60 bg-black/50 px-3 py-2 text-xs text-slate-100/90"
-              disabled={busy}
-            >
-              <option value="battle_report">Battle Report</option>
-              <option value="hero_profile">Hero Profile</option>
-              <option value="gear">Gear</option>
-              <option value="drone">Drone</option>
-              <option value="overlord">Overlord</option>
-              <option value="unknown">Unknown</option>
-            </select>
+    <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm tracking-wide text-slate-100/90">Image Upload</div>
+          <div className="mt-1 text-xs text-slate-300/70">
+            Add images in batches (Android-friendly) — up to <span className="text-slate-100/80">{MAX_FILES}</span>.
           </div>
         </div>
 
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={onPick}
-          disabled={busy}
-          className="block w-full text-xs text-slate-200/80 file:mr-3 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-3 file:py-2 file:text-xs file:text-fuchsia-100 hover:file:bg-fuchsia-600/30"
-        />
-
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-300/70">
-            Selected: <span className="text-slate-100/90">{files.length}</span> / {maxFiles}
+        {lastReportId ? (
+          <div className="rounded-xl border border-cyan-400/25 bg-cyan-950/20 px-3 py-2 text-[11px] text-cyan-200/90">
+            reportId: <span className="font-mono">{lastReportId}</span>
           </div>
+        ) : null}
+      </div>
 
-          <button
-            type="button"
-            onClick={onUpload}
-            disabled={busy || files.length === 0}
-            className={cn(
-              "rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200/90",
-              "hover:border-cyan-300/40 transition",
-              (busy || files.length === 0) && "opacity-60 cursor-not-allowed"
-            )}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[260px_1fr]">
+        <div className="space-y-2">
+          <label className="text-[11px] uppercase tracking-widest text-slate-400/80">Upload type</label>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as UploadKind)}
+            className="w-full rounded-xl border border-slate-700/60 bg-black/40 px-3 py-2 text-sm text-slate-100/90"
+            disabled={busy}
           >
-            {busy ? "Uploading…" : "Upload"}
-          </button>
+            {KIND_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <div className="text-xs text-slate-300/70">{hint}</div>
         </div>
 
-        {progress ? (
-          <div className="text-xs text-slate-300/70">
-            Progress: {progress.done}/{progress.total}
-          </div>
-        ) : null}
+        <div className="space-y-2">
+          <label className="text-[11px] uppercase tracking-widest text-slate-400/80">Choose images</label>
 
-        {results.length ? (
-          <div className="mt-2 space-y-2">
-            {results.map((r, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "rounded-xl border p-3 text-xs",
-                  r.ok ? "border-emerald-500/25 bg-emerald-950/10 text-emerald-200/90" : "border-rose-500/25 bg-rose-950/10 text-rose-200/90"
-                )}
+          {/* Android note:
+              Even if the picker only allows a few at a time, you can keep selecting more;
+              we APPEND up to MAX_FILES. */}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            disabled={busy || files.length >= MAX_FILES}
+            onChange={(e) => {
+              addPickedFiles(e.target.files);
+              // reset so selecting same file again triggers change
+              (e.target as HTMLInputElement).value = "";
+            }}
+            className="w-full rounded-xl border border-slate-700/60 bg-black/40 px-3 py-2 text-sm text-slate-200/80 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900/60 file:px-3 file:py-2 file:text-xs file:text-slate-100/90"
+          />
+
+          <div className="flex items-center justify-between text-xs text-slate-300/70">
+            <div>
+              Selected: <span className="text-slate-100/80">{files.length}</span> / {MAX_FILES}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={clearAll}
+                disabled={busy && files.length === 0}
+                className="rounded-lg border border-slate-700/60 bg-black/40 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/80 hover:border-slate-500/60 transition disabled:opacity-50"
               >
-                {r.ok ? (
-                  <div>
-                    ✅ {r.kind} — {r.message ?? "ok"}
-                    {r.reportId ? <div className="mt-1 text-[11px] text-slate-200/70">reportId: {r.reportId}</div> : null}
-                    {r.storagePath ? <div className="mt-1 text-[11px] text-slate-200/70">path: {r.storagePath}</div> : null}
-                  </div>
-                ) : (
-                  <div>❌ {r.kind} — {r.error}</div>
-                )}
-              </div>
-            ))}
+                Clear
+              </button>
+            </div>
           </div>
-        ) : null}
 
-        <div className="mt-2 text-[11px] text-slate-400/70">
-          Tip: pick <b>Battle Report</b> to upload 1–20 pages as one grouped report session (recommended).
+          {files.length > 0 ? (
+            <div className="max-h-36 overflow-auto rounded-xl border border-slate-700/40 bg-black/20 p-2 text-xs text-slate-200/80">
+              {files.map((f, idx) => (
+                <div key={`${f.name}-${f.size}-${f.lastModified}`} className="flex items-center justify-between gap-2 py-1">
+                  <div className="truncate">{idx + 1}. {f.name}</div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(idx)}
+                    disabled={busy}
+                    className="rounded-md border border-slate-700/60 bg-black/30 px-2 py-0.5 text-[10px] uppercase tracking-widest text-slate-200/70 hover:border-fuchsia-400/30 transition disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-3">
+        <button
+          type="button"
+          disabled={busy || files.length === 0}
+          onClick={onUpload}
+          className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-950/20 px-4 py-2 text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-400/35 disabled:opacity-50 transition"
+        >
+          {busy ? "Uploading…" : "Upload"}
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700/40 bg-black/20 p-3">
+        <div className="text-[11px] uppercase tracking-widest text-slate-400/80">Upload log</div>
+        <div className="mt-2 space-y-1 text-xs text-slate-200/80">
+          {log.length === 0 ? <div className="text-slate-400/70">No activity yet.</div> : null}
+          {log.map((l, i) => (
+            <div key={i} className="font-mono">{l}</div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
-
-// Some codebases import default; keep both exports safe.
-export default UploadDocumentsForm;
