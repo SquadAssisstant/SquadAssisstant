@@ -25,26 +25,37 @@ export async function POST(req: Request) {
   const s = await requireSession(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({}));
-  const declaredKind = typeof body?.kind === "string" ? body.kind : "battle_report";
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
-  const sb = supabaseAdmin();
+  // kind is optional: "battle_report" | "hero_profile" | etc.
+  const kind = (body as any).kind ? String((body as any).kind) : "battle_report";
+  const consent_scope = (body as any).consent_scope ? String((body as any).consent_scope) : "private";
+
+  // ✅ cast to any so .from() doesn't become never in prod build
+  const sb = supabaseAdmin() as any;
 
   // Create the report container
   const created = await sb
     .from("battle_reports")
     .insert({
       profile_id: s.profileId,
-      consent_scope: "private",
-      parsed: {
-        kind: declaredKind,
-        status: "draft",
-      },
+      consent_scope,
+      parsed: { kind, status: "collecting" },
     })
     .select("id")
     .single();
 
-  if (created.error) return NextResponse.json({ error: created.error.message }, { status: 500 });
+  if (created.error) {
+    return NextResponse.json({ error: created.error.message }, { status: 500 });
+  }
 
-  return NextResponse.json({ ok: true, reportId: created.data.id });
+  return NextResponse.json({
+    ok: true,
+    reportId: created.data.id,
+    kind,
+    status: "collecting",
+  });
 }
