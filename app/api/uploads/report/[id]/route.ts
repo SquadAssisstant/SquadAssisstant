@@ -2,91 +2,55 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
-function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+function getCookie(cookieHeader: string | null, name: string) {
   if (!cookieHeader) return undefined;
-  const parts = cookieHeader.split(";").map((p) => p.trim());
-  for (const p of parts) {
-    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
-  }
-  return undefined;
+  return cookieHeader
+    .split(";")
+    .map((p) => p.trim())
+    .find((p) => p.startsWith(name + "="))
+    ?.slice(name.length + 1);
 }
 
-async function requireSessionFromReq(req: Request) {
-  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
+async function requireSession(req: Request) {
+  const token = getCookie(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
   try {
-    return await verifySession(token);
+    return await verifySession(decodeURIComponent(token));
   } catch {
     return null;
   }
 }
 
-function scrubParsed(parsed: any) {
-  if (!parsed || typeof parsed !== "object") return parsed;
-  const clone = JSON.parse(JSON.stringify(parsed));
-
-  if (clone.exif && typeof clone.exif === "object") {
-    const ex = clone.exif;
-
-    // GPS-like keys
-    delete ex.GPSLatitude;
-    delete ex.GPSLongitude;
-    delete ex.GPSAltitude;
-    delete ex.GPSLatitudeRef;
-    delete ex.GPSLongitudeRef;
-    delete ex.GPSPosition;
-    delete ex.gps;
-    delete ex.GPS;
-
-    // Timestamp-like keys
-    delete ex.DateTimeOriginal;
-    delete ex.CreateDate;
-    delete ex.ModifyDate;
-    delete ex.DateTimeDigitized;
-    delete ex.OffsetTimeOriginal;
-    delete ex.OffsetTimeDigitized;
-    delete ex.OffsetTime;
-  }
-
-  delete clone.identity;
-  delete clone.location;
-
-  return clone;
-}
-
-export async function GET(
-  req: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const s = await requireSessionFromReq(req);
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const s = await requireSession(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await context.params;
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  const { id } = await ctx.params;
+  const sb = supabaseAdmin() as any;
 
-  const sb: any = supabaseAdmin();
-
-  const { data, error } = await sb
+  const rep = await sb
     .from("battle_reports")
-    .select("id, profile_id, consent_scope, raw_storage_path, parsed")
+    .select("id, consent_scope, raw_storage_path, parsed")
     .eq("id", id)
+    .eq("profile_id", s.profileId)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (rep.error) return NextResponse.json({ error: rep.error.message }, { status: 500 });
+  if (!rep.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Ownership check
-  if (data.profile_id !== s.profileId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  // If you have pages table, include them; if not, this returns []
+  const pages = await sb
+    .from("battle_report_pages")
+    .select("id, storage_bucket, storage_path, page_index, sha256, mime, bytes")
+    .eq("report_id", id)
+    .eq("profile_id", s.profileId)
+    .order("page_index", { ascending: true });
+
+  if (pages.error) return NextResponse.json({ error: pages.error.message }, { status: 500 });
 
   return NextResponse.json({
     ok: true,
-    report: {
-      id: data.id,
-      consent_scope: data.consent_scope ?? "private",
-      raw_storage_path: data.raw_storage_path ?? null,
-      parsed: scrubParsed(data.parsed),
-    },
+    report: rep.data,
+    pages: pages.data ?? [],
   });
 }
