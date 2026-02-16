@@ -14,19 +14,70 @@ function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+/**
+ * Some template pages import these.
+ * Keep them exported so builds don’t fail even if you don’t use them on Home.
+ */
+export function ChatLayout({ children }: { children: React.ReactNode }) {
+  return <div className="flex h-full w-full flex-col">{children}</div>;
+}
+
+/**
+ * Minimal generic input used by some template pages.
+ * (Even if your Home doesn’t use it, exporting prevents build errors.)
+ */
+export function ChatInput(props: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const { value, onChange, onSend, placeholder, disabled } = props;
+  return (
+    <div className="mt-2 flex items-end gap-2">
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "Type a message…"}
+        className="min-h-[44px] w-full resize-none rounded-2xl border border-slate-700/60 bg-black/40 p-3 text-sm text-slate-100/90 outline-none focus:border-fuchsia-400/50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSend();
+          }
+        }}
+      />
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={!!disabled || value.trim().length === 0}
+        className={cn(
+          "rounded-2xl border px-4 py-3 text-xs uppercase tracking-widest transition",
+          !disabled && value.trim().length > 0
+            ? "border-fuchsia-500/30 bg-fuchsia-950/20 text-fuchsia-200/90 hover:border-fuchsia-400/50"
+            : "border-slate-700/60 bg-black/30 text-slate-400/60 cursor-not-allowed"
+        )}
+      >
+        Send
+      </button>
+    </div>
+  );
+}
+
 export function ChatWindow(props: {
   endpoint: string;
   emoji?: string;
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
 
-  // NOTE: these exist in some template pages; accept them so builds don't fail
+  // Some template pages pass these; accept them so builds don’t fail.
   showIntermediateStepsToggle?: boolean;
   showIngestForm?: boolean;
 }) {
   const { endpoint, emoji = "🤖", placeholder = "Type a message…", emptyStateComponent } = props;
 
-  // ✅ CRITICAL: hard-type state so "role" cannot widen to string
+  // ✅ HARD TYPE: prevents inference drifting
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -36,13 +87,13 @@ export function ChatWindow(props: {
   async function send() {
     if (!canSend) return;
 
-    // ✅ CRITICAL: force the literal type to remain "user"
-    const userMsg: Message = { role: "user", content: input.trim() };
+    const trimmed = input.trim();
 
-    // ✅ CRITICAL: explicitly type the array
-    const newMessages: Message[] = [...messages, userMsg];
+    // ✅ FORCE LITERAL TYPES (no widening)
+    const userMsg: Message = { role: "user" as const, content: trimmed };
 
-    setMessages(newMessages);
+    // ✅ FUNCTIONAL UPDATE = prev is Message[] contextually
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
@@ -50,7 +101,8 @@ export function ChatWindow(props: {
       const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages }),
+        // ✅ IMPORTANT: send the conversation INCLUDING the new user message
+        body: JSON.stringify({ messages: [...messages, userMsg] }),
       });
 
       const data = await res.json().catch(() => null);
@@ -61,15 +113,15 @@ export function ChatWindow(props: {
         "";
 
       const assistantMsg: Message = {
-        role: "assistant",
+        role: "assistant" as const,
         content: assistantText || "No response.",
       };
 
-      setMessages((prev: Message[]) => [...prev, assistantMsg]);
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (e: any) {
-      setMessages((prev: Message[]) => [
+      setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Error: ${e?.message ?? "request failed"}` },
+        { role: "assistant" as const, content: `Error: ${e?.message ?? "request failed"}` },
       ]);
     } finally {
       setLoading(false);
@@ -77,7 +129,7 @@ export function ChatWindow(props: {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-2xl">
+    <ChatLayout>
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <div className="flex items-center gap-2 text-sm text-slate-200/80">
@@ -117,34 +169,7 @@ export function ChatWindow(props: {
       </div>
 
       {/* Input */}
-      <div className="mt-2 flex items-end gap-2">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={placeholder}
-          className="min-h-[44px] w-full resize-none rounded-2xl border border-slate-700/60 bg-black/40 p-3 text-sm text-slate-100/90 outline-none focus:border-fuchsia-400/50"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-
-        <button
-          type="button"
-          onClick={send}
-          disabled={!canSend}
-          className={cn(
-            "rounded-2xl border px-4 py-3 text-xs uppercase tracking-widest transition",
-            canSend
-              ? "border-fuchsia-500/30 bg-fuchsia-950/20 text-fuchsia-200/90 hover:border-fuchsia-400/50"
-              : "border-slate-700/60 bg-black/30 text-slate-400/60 cursor-not-allowed"
-          )}
-        >
-          Send
-        </button>
-      </div>
-    </div>
+      <ChatInput value={input} onChange={setInput} onSend={send} placeholder={placeholder} disabled={!canSend} />
+    </ChatLayout>
   );
 }
