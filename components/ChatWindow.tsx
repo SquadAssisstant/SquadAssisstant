@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 
-type Role = "user" | "assistant";
+/**
+ * IMPORTANT:
+ * Some pages / backends may send roles that are not strictly "user" | "assistant".
+ * To prevent TypeScript from blocking builds, we allow string here.
+ * UI still treats only "user" as user; everything else renders as assistant.
+ */
+export type Role = "user" | "assistant" | string;
 
 export type Message = {
   role: Role;
@@ -14,49 +20,58 @@ function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-/**
- * Some template pages import these.
- * Keep them exported so builds don’t fail even if you don’t use them on Home.
- */
-export function ChatLayout({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full w-full flex-col">{children}</div>;
+/** Small helpers so older pages importing these don't break */
+export function ChatLayout({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("flex h-full flex-col", className)}>{children}</div>;
 }
 
-/**
- * Minimal generic input used by some template pages.
- * (Even if your Home doesn’t use it, exporting prevents build errors.)
- */
-export function ChatInput(props: {
+export function ChatInput({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  placeholder,
+}: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
-  placeholder?: string;
   disabled?: boolean;
+  placeholder?: string;
 }) {
-  const { value, onChange, onSend, placeholder, disabled } = props;
   return (
-    <div className="mt-2 flex items-end gap-2">
+    <div className="flex items-end gap-2">
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder ?? "Type a message…"}
-        className="min-h-[44px] w-full resize-none rounded-2xl border border-slate-700/60 bg-black/40 p-3 text-sm text-slate-100/90 outline-none focus:border-fuchsia-400/50"
+        rows={2}
+        className={cn(
+          "w-full resize-none rounded-2xl border border-slate-700/50 bg-black/40 px-3 py-2",
+          "text-sm text-slate-100 placeholder:text-slate-500",
+          "focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+        )}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            onSend();
+            if (!disabled) onSend();
           }
         }}
       />
       <button
         type="button"
         onClick={onSend}
-        disabled={!!disabled || value.trim().length === 0}
+        disabled={disabled}
         className={cn(
-          "rounded-2xl border px-4 py-3 text-xs uppercase tracking-widest transition",
-          !disabled && value.trim().length > 0
-            ? "border-fuchsia-500/30 bg-fuchsia-950/20 text-fuchsia-200/90 hover:border-fuchsia-400/50"
-            : "border-slate-700/60 bg-black/30 text-slate-400/60 cursor-not-allowed"
+          "shrink-0 rounded-2xl border px-4 py-2 text-xs uppercase tracking-widest",
+          disabled
+            ? "border-slate-700/50 bg-black/30 text-slate-500"
+            : "border-fuchsia-500/30 bg-black/40 text-fuchsia-200 hover:border-fuchsia-400/40 hover:text-fuchsia-100"
         )}
       >
         Send
@@ -71,105 +86,168 @@ export function ChatWindow(props: {
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
 
-  // Some template pages pass these; accept them so builds don’t fail.
+  /** Compatibility flags used in other template pages; safe to ignore */
   showIntermediateStepsToggle?: boolean;
   showIngestForm?: boolean;
+
+  /** Optional */
+  className?: string;
+  initialMessages?: Message[];
 }) {
-  const { endpoint, emoji = "🤖", placeholder = "Type a message…", emptyStateComponent } = props;
+  const {
+    endpoint,
+    emoji = "🤖",
+    placeholder,
+    emptyStateComponent,
+    className,
+    initialMessages,
+  } = props;
 
-  // ✅ HARD TYPE: prevents inference drifting
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
+  const [messages, setMessages] = useState<Message[]>(
+    () => initialMessages ?? []
+  );
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  async function send() {
-    if (!canSend) return;
+  const endpointUrl = useMemo(() => {
+    if (!endpoint) return "/api/chat";
+    return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  }, [endpoint]);
 
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }));
+  }, []);
+
+  const send = useCallback(async () => {
     const trimmed = input.trim();
+    if (!trimmed || loading) return;
 
-    // ✅ FORCE LITERAL TYPES (no widening)
-    const userMsg: Message = { role: "user" as const, content: trimmed };
-
-    // ✅ FUNCTIONAL UPDATE = prev is Message[] contextually
-    setMessages((prev) => [...prev, userMsg]);
+    const nextMessages: Message[] = [...messages, { role: "user", content: trimmed }];
+    setMessages(nextMessages);
     setInput("");
     setLoading(true);
+    scrollToBottom();
 
     try {
-      const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
+      const res = await fetch(endpointUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // ✅ IMPORTANT: send the conversation INCLUDING the new user message
-        body: JSON.stringify({ messages: [...messages, userMsg] }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          // common patterns across different endpoints:
+          messages: nextMessages,
+          input: trimmed,
+        }),
       });
 
-      const data = await res.json().catch(() => null);
+      const data = await res.json().catch(() => ({}));
+
+      // Try to normalize the response into a single assistant message:
+      // supports many shapes depending on which backend route is used.
+      const content =
+        data?.content ??
+        data?.message ??
+        data?.output ??
+        data?.text ??
+        data?.answer ??
+        (typeof data === "string" ? data : null);
 
       const assistantText =
-        (data && (data.content || data.message || data.text || data.answer)) ??
-        (typeof data === "string" ? data : "") ??
-        "";
+        typeof content === "string" && content.length
+          ? content
+          : res.ok
+          ? "(No response content returned.)"
+          : data?.error
+          ? String(data.error)
+          : "Request failed.";
 
-      const assistantMsg: Message = {
-        role: "assistant" as const,
-        content: assistantText || "No response.",
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [...prev, { role: "assistant", content: assistantText }]);
+      scrollToBottom();
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant" as const, content: `Error: ${e?.message ?? "request failed"}` },
+        { role: "assistant", content: `Network error: ${e?.message ?? "unknown"}` },
       ]);
+      scrollToBottom();
     } finally {
       setLoading(false);
     }
-  }
+  }, [endpointUrl, input, loading, messages, scrollToBottom]);
 
   return (
-    <ChatLayout>
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <div className="flex items-center gap-2 text-sm text-slate-200/80">
-          <span className="text-lg">{emoji}</span>
-          <span className="tracking-wide">Chat</span>
-        </div>
-      </div>
-
+    <ChatLayout className={cn("h-full w-full", className)}>
       {/* Messages */}
-      <div className="flex-1 overflow-auto rounded-2xl border border-slate-800/60 bg-black/25 p-3">
+      <div className="flex-1 overflow-auto rounded-2xl border border-slate-800/50 bg-black/20 p-3">
         {messages.length === 0 ? (
-          emptyStateComponent ?? <div className="text-sm text-slate-300/70">Ask something to get started.</div>
+          <div className="h-full flex items-center justify-center">
+            {emptyStateComponent ?? (
+              <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-300/70">
+                <div className="text-lg">{emoji}</div>
+                <div className="mt-2">Ask me anything about the game.</div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="space-y-3">
-            {messages.map((m, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "rounded-2xl border px-3 py-2 text-sm",
-                  m.role === "user"
-                    ? "ml-auto max-w-[85%] border-cyan-400/25 bg-cyan-950/15 text-cyan-100/90"
-                    : "mr-auto max-w-[85%] border-fuchsia-500/20 bg-black/35 text-slate-100/90"
-                )}
-              >
-                <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
-              </div>
-            ))}
+            {messages.map((m, idx) => {
+              const isUser = m.role === "user";
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "flex",
+                    isUser ? "justify-end" : "justify-start"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "max-w-[85%] rounded-2xl border px-3 py-2 text-sm leading-relaxed",
+                      isUser
+                        ? "border-fuchsia-500/25 bg-fuchsia-950/20 text-slate-100"
+                        : "border-slate-700/50 bg-black/35 text-slate-100"
+                    )}
+                  >
+                    {!isUser ? (
+                      <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/70">
+                        {emoji} assistant
+                      </div>
+                    ) : (
+                      <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/70">
+                        you
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
           </div>
         )}
-
-        {loading ? (
-          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300/70">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Thinking…
-          </div>
-        ) : null}
       </div>
 
       {/* Input */}
-      <ChatInput value={input} onChange={setInput} onSend={send} placeholder={placeholder} disabled={!canSend} />
+      <div className="mt-2 rounded-2xl border border-slate-800/50 bg-black/25 p-2">
+        <ChatInput
+          value={input}
+          onChange={setInput}
+          onSend={send}
+          disabled={loading}
+          placeholder={placeholder}
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <div className="text-[10px] uppercase tracking-widest text-slate-500/80">
+            {endpointUrl}
+          </div>
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-slate-300/70">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              thinking…
+            </div>
+          ) : null}
+        </div>
+      </div>
     </ChatLayout>
   );
 }
