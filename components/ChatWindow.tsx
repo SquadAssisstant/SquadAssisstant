@@ -30,7 +30,6 @@ export function ChatWindow({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -47,16 +46,21 @@ export function ChatWindow({
     const text = input.trim();
     if (!text || busy) return;
 
-    const next: Message[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
+    // 1) append the user message
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setBusy(true);
 
     try {
+      // IMPORTANT: build the payload from the latest known state
+      // We can’t rely on `messages` right after setMessages() due to async state updates,
+      // so we reconstruct by appending to the current `messages` snapshot.
+      const payload: Message[] = [...messages, { role: "user", content: text }];
+
       const res = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: payload }),
       });
 
       const json = await res.json().catch(() => null);
@@ -69,7 +73,6 @@ export function ChatWindow({
         return;
       }
 
-      // Support both { message: "..." } and { content: "..." } and { output_text: "..." }
       const assistantText =
         json?.message ??
         json?.content ??
@@ -78,6 +81,7 @@ export function ChatWindow({
         (typeof json === "string" ? json : null) ??
         "OK.";
 
+      // 2) append assistant message
       setMessages((prev) => [...prev, { role: "assistant", content: String(assistantText) }]);
     } catch (e: any) {
       setMessages((prev) => [...prev, { role: "assistant", content: e?.message || "Network error." }]);
@@ -197,12 +201,12 @@ export function ChatWindow({
                   maxFiles={20}
                   endpoint="/api/uploads/image"
                   onAllDone={(results) => {
-                    const okCount = results.filter((r) => r.ok).length;
+                    const okCount = results.filter((r: any) => r.ok).length;
                     setMessages((prev) => [
                       ...prev,
                       {
                         role: "assistant",
-                        content: `Upload batch complete: ${okCount}/${results.length} succeeded. Open Battle Reports Analyzer to continue (next step is wiring “report session” grouping).`,
+                        content: `Upload batch complete: ${okCount}/${results.length} succeeded.`,
                       },
                     ]);
                   }}
