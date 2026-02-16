@@ -1,15 +1,9 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import UploadDocumentsForm from "./UploadDocumentsForm";
 
-/**
- * IMPORTANT:
- * Some pages / backends may send roles that are not strictly "user" | "assistant".
- * To prevent TypeScript from blocking builds, we allow string here.
- * UI still treats only "user" as user; everything else renders as assistant.
- */
-export type Role = "user" | "assistant" | string;
+type Role = "user" | "assistant";
 
 export type Message = {
   role: Role;
@@ -20,234 +14,214 @@ function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-/** Small helpers so older pages importing these don't break */
-export function ChatLayout({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={cn("flex h-full flex-col", className)}>{children}</div>;
-}
-
-export function ChatInput({
-  value,
-  onChange,
-  onSend,
-  disabled,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSend: () => void;
-  disabled?: boolean;
-  placeholder?: string;
-}) {
-  return (
-    <div className="flex items-end gap-2">
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder ?? "Type a message…"}
-        rows={2}
-        className={cn(
-          "w-full resize-none rounded-2xl border border-slate-700/50 bg-black/40 px-3 py-2",
-          "text-sm text-slate-100 placeholder:text-slate-500",
-          "focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-        )}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            if (!disabled) onSend();
-          }
-        }}
-      />
-      <button
-        type="button"
-        onClick={onSend}
-        disabled={disabled}
-        className={cn(
-          "shrink-0 rounded-2xl border px-4 py-2 text-xs uppercase tracking-widest",
-          disabled
-            ? "border-slate-700/50 bg-black/30 text-slate-500"
-            : "border-fuchsia-500/30 bg-black/40 text-fuchsia-200 hover:border-fuchsia-400/40 hover:text-fuchsia-100"
-        )}
-      >
-        Send
-      </button>
-    </div>
-  );
-}
-
-export function ChatWindow(props: {
-  endpoint: string;
+type ChatWindowProps = {
+  endpoint: string; // e.g. "api/chat"
   emoji?: string;
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
+};
 
-  /** Compatibility flags used in other template pages; safe to ignore */
-  showIntermediateStepsToggle?: boolean;
-  showIngestForm?: boolean;
-
-  /** Optional */
-  className?: string;
-  initialMessages?: Message[];
-}) {
-  const {
-    endpoint,
-    emoji = "🤖",
-    placeholder,
-    emptyStateComponent,
-    className,
-    initialMessages,
-  } = props;
-
-  const [messages, setMessages] = useState<Message[]>(
-    () => initialMessages ?? []
-  );
+export function ChatWindow({
+  endpoint,
+  emoji = "🤖",
+  placeholder = "Type a message…",
+  emptyStateComponent,
+}: ChatWindowProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
-  const endpointUrl = useMemo(() => {
-    if (!endpoint) return "/api/chat";
-    return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  }, [endpoint]);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  const scrollToBottom = useCallback(() => {
-    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }));
-  }, []);
+  const apiUrl = useMemo(() => (endpoint.startsWith("/") ? endpoint : `/${endpoint}`), [endpoint]);
 
-  const send = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || loading) return;
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
 
-    const nextMessages: Message[] = [...messages, { role: "user", content: trimmed }];
-    setMessages(nextMessages);
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+
+    const next: Message[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
     setInput("");
-    setLoading(true);
-    scrollToBottom();
+    setBusy(true);
 
     try {
-      const res = await fetch(endpointUrl, {
+      const res = await fetch(apiUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          // common patterns across different endpoints:
-          messages: nextMessages,
-          input: trimmed,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const json = await res.json().catch(() => null);
 
-      // Try to normalize the response into a single assistant message:
-      // supports many shapes depending on which backend route is used.
-      const content =
-        data?.content ??
-        data?.message ??
-        data?.output ??
-        data?.text ??
-        data?.answer ??
-        (typeof data === "string" ? data : null);
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: json?.error || `Error (${res.status}) from chat endpoint.` },
+        ]);
+        return;
+      }
 
+      // Support both { message: "..." } and { content: "..." } and { output_text: "..." }
       const assistantText =
-        typeof content === "string" && content.length
-          ? content
-          : res.ok
-          ? "(No response content returned.)"
-          : data?.error
-          ? String(data.error)
-          : "Request failed.";
+        json?.message ??
+        json?.content ??
+        json?.output_text ??
+        json?.text ??
+        (typeof json === "string" ? json : null) ??
+        "OK.";
 
-      setMessages((prev) => [...prev, { role: "assistant", content: assistantText }]);
-      scrollToBottom();
+      setMessages((prev) => [...prev, { role: "assistant", content: String(assistantText) }]);
     } catch (e: any) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Network error: ${e?.message ?? "unknown"}` },
-      ]);
-      scrollToBottom();
+      setMessages((prev) => [...prev, { role: "assistant", content: e?.message || "Network error." }]);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, [endpointUrl, input, loading, messages, scrollToBottom]);
+  }
 
   return (
-    <ChatLayout className={cn("h-full w-full", className)}>
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700/40 bg-black/20 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="text-lg">{emoji}</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-slate-300/80">Chat</div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setUploadOpen(true)}
+          className="rounded-xl border border-slate-700/60 bg-black/40 px-3 py-1.5 text-[10px] uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+        >
+          Upload
+        </button>
+      </div>
+
       {/* Messages */}
-      <div className="flex-1 overflow-auto rounded-2xl border border-slate-800/50 bg-black/20 p-3">
+      <div
+        ref={listRef}
+        className="mt-2 flex-1 overflow-y-auto rounded-2xl border border-slate-700/40 bg-black/15 p-3"
+      >
         {messages.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            {emptyStateComponent ?? (
-              <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-300/70">
-                <div className="text-lg">{emoji}</div>
-                <div className="mt-2">Ask me anything about the game.</div>
-              </div>
-            )}
-          </div>
+          emptyStateComponent ?? (
+            <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
+              Ask anything about squads, heroes, gear, drone, overlord, and uploads.
+            </div>
+          )
         ) : (
           <div className="space-y-3">
-            {messages.map((m, idx) => {
-              const isUser = m.role === "user";
-              return (
-                <div
-                  key={idx}
-                  className={cn(
-                    "flex",
-                    isUser ? "justify-end" : "justify-start"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "max-w-[85%] rounded-2xl border px-3 py-2 text-sm leading-relaxed",
-                      isUser
-                        ? "border-fuchsia-500/25 bg-fuchsia-950/20 text-slate-100"
-                        : "border-slate-700/50 bg-black/35 text-slate-100"
-                    )}
-                  >
-                    {!isUser ? (
-                      <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/70">
-                        {emoji} assistant
-                      </div>
-                    ) : (
-                      <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/70">
-                        you
-                      </div>
-                    )}
-                    <div className="whitespace-pre-wrap">{m.content}</div>
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={bottomRef} />
+            {messages.map((m, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "max-w-[92%] rounded-2xl border px-3 py-2 text-sm leading-relaxed",
+                  m.role === "user"
+                    ? "ml-auto border-cyan-400/25 bg-cyan-950/15 text-cyan-50/90"
+                    : "mr-auto border-fuchsia-500/20 bg-black/30 text-slate-100/85"
+                )}
+              >
+                {m.content}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
       {/* Input */}
-      <div className="mt-2 rounded-2xl border border-slate-800/50 bg-black/25 p-2">
-        <ChatInput
-          value={input}
-          onChange={setInput}
-          onSend={send}
-          disabled={loading}
-          placeholder={placeholder}
-        />
-        <div className="mt-2 flex items-center justify-between">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500/80">
-            {endpointUrl}
-          </div>
-          {loading ? (
-            <div className="flex items-center gap-2 text-xs text-slate-300/70">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              thinking…
-            </div>
-          ) : null}
+      <div className="mt-2 rounded-2xl border border-slate-700/40 bg-black/20 p-2">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            rows={2}
+            placeholder={placeholder}
+            className="min-h-[44px] flex-1 resize-none rounded-xl border border-slate-700/60 bg-black/35 px-3 py-2 text-sm text-slate-100/90 outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void send()}
+            disabled={busy || !input.trim()}
+            className={cn(
+              "rounded-xl border px-4 py-2 text-xs uppercase tracking-widest transition",
+              busy || !input.trim()
+                ? "border-slate-700/60 bg-black/40 text-slate-400/70"
+                : "border-cyan-400/30 bg-cyan-950/20 text-cyan-200/90 hover:border-cyan-300/40"
+            )}
+          >
+            {busy ? "…" : "Send"}
+          </button>
+        </div>
+
+        <div className="mt-2 text-[10px] uppercase tracking-widest text-slate-400/70">
+          Tip: press Enter to send • Shift+Enter for newline
         </div>
       </div>
-    </ChatLayout>
+
+      {/* Upload Modal */}
+      {uploadOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setUploadOpen(false)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+          />
+          <div className="absolute left-1/2 top-16 w-[min(980px,calc(100vw-24px))] -translate-x-1/2">
+            <div className="overflow-hidden rounded-3xl border border-fuchsia-500/25 bg-black/65 backdrop-blur-xl shadow-[0_0_60px_rgba(168,85,247,.14)]">
+              <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
+                <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">UPLOAD</div>
+                <button
+                  type="button"
+                  onClick={() => setUploadOpen(false)}
+                  className="rounded-full border border-slate-700/60 bg-black/40 px-3 py-1 text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-5">
+                <UploadDocumentsForm
+                  maxFiles={20}
+                  endpoint="/api/uploads/image"
+                  onAllDone={(results) => {
+                    const okCount = results.filter((r) => r.ok).length;
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        role: "assistant",
+                        content: `Upload batch complete: ${okCount}/${results.length} succeeded. Open Battle Reports Analyzer to continue (next step is wiring “report session” grouping).`,
+                      },
+                    ]);
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-end border-t border-slate-800/60 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setUploadOpen(false)}
+                  className="rounded-2xl border border-slate-700/60 bg-black/40 px-4 py-2 text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
