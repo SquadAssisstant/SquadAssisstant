@@ -1,22 +1,14 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ArrowDown, LoaderCircle, Paperclip } from "lucide-react";
-import { Checkbox } from "./ui/checkbox";
-
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "./ui/dialog";
-
-import UploadDocumentsForm from "./UploadDocumentsForm";
+import { LoaderCircle } from "lucide-react";
 
 type Role = "user" | "assistant";
-export type Message = { role: Role; content: string };
+
+export type Message = {
+  role: Role;
+  content: string;
+};
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -27,19 +19,27 @@ export function ChatWindow(props: {
   emoji?: string;
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
+
+  // NOTE: these exist in some template pages; accept them so builds don't fail
+  showIntermediateStepsToggle?: boolean;
+  showIngestForm?: boolean;
 }) {
   const { endpoint, emoji = "🤖", placeholder = "Type a message…", emptyStateComponent } = props;
 
+  // ✅ CRITICAL: hard-type state so "role" cannot widen to string
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
 
   async function send() {
     if (!canSend) return;
 
+    // ✅ CRITICAL: force the literal type to remain "user"
     const userMsg: Message = { role: "user", content: input.trim() };
+
+    // ✅ CRITICAL: explicitly type the array
     const newMessages: Message[] = [...messages, userMsg];
 
     setMessages(newMessages);
@@ -55,7 +55,6 @@ export function ChatWindow(props: {
 
       const data = await res.json().catch(() => null);
 
-      // Normalize whatever your API returns into Message
       const assistantText =
         (data && (data.content || data.message || data.text || data.answer)) ??
         (typeof data === "string" ? data : "") ??
@@ -66,9 +65,9 @@ export function ChatWindow(props: {
         content: assistantText || "No response.",
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev: Message[]) => [...prev, assistantMsg]);
     } catch (e: any) {
-      setMessages((prev) => [
+      setMessages((prev: Message[]) => [
         ...prev,
         { role: "assistant", content: `Error: ${e?.message ?? "request failed"}` },
       ]);
@@ -85,43 +84,12 @@ export function ChatWindow(props: {
           <span className="text-lg">{emoji}</span>
           <span className="tracking-wide">Chat</span>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Upload button */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700/60 bg-black/40 px-3 py-1.5 text-xs text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
-                title="Upload images/documents"
-              >
-                <Paperclip className="h-4 w-4" />
-                Upload
-              </button>
-            </DialogTrigger>
-            <DialogContent className="max-w-[min(900px,calc(100vw-24px))]">
-              <DialogHeader>
-                <DialogTitle>Upload</DialogTitle>
-                <DialogDescription>
-                  Upload up to your allowed max in one go. Use the dropdown to tell the system what you’re uploading.
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* IMPORTANT: UploadDocumentsForm is a DEFAULT export */}
-              <UploadDocumentsForm />
-            </DialogContent>
-          </Dialog>
-        </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-auto rounded-2xl border border-slate-800/60 bg-black/25 p-3">
         {messages.length === 0 ? (
-          emptyStateComponent ?? (
-            <div className="text-sm text-slate-300/70">
-              Ask something to get started.
-            </div>
-          )
+          emptyStateComponent ?? <div className="text-sm text-slate-300/70">Ask something to get started.</div>
         ) : (
           <div className="space-y-3">
             {messages.map((m, idx) => (
