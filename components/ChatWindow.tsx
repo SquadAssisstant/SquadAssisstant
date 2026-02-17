@@ -2,8 +2,6 @@
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { LoaderCircle, Paperclip } from "lucide-react";
-
-// IMPORTANT: default export in UploadDocumentsForm, so import default.
 import UploadDocumentsForm from "./UploadDocumentsForm";
 
 type Role = "user" | "assistant";
@@ -13,10 +11,6 @@ function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-/**
- * Named exports required by /app/langgraph/page.tsx:
- *   import { ChatInput, ChatLayout } from "@/components/ChatWindow";
- */
 export function ChatLayout({
   header,
   children,
@@ -37,6 +31,12 @@ export function ChatLayout({
   );
 }
 
+/**
+ * IMPORTANT:
+ * langgraph/page.tsx expects DOM-event style handlers:
+ *   onChange={(e) => setX(e.target.value)}
+ *   onSubmit={(e) => { e.preventDefault(); ... }}
+ */
 export function ChatInput({
   value,
   onChange,
@@ -46,17 +46,20 @@ export function ChatInput({
   right,
 }: {
   value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (e: React.FormEvent) => void;
   placeholder?: string;
   disabled?: boolean;
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-end gap-2">
+    <form
+      onSubmit={onSubmit}
+      className="flex items-end gap-2"
+    >
       <textarea
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
         placeholder={placeholder ?? "Type a message…"}
         disabled={disabled}
         rows={1}
@@ -68,12 +71,13 @@ export function ChatInput({
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            onSubmit();
+            // submit the form
+            (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
           }
         }}
       />
       {right}
-    </div>
+    </form>
   );
 }
 
@@ -91,7 +95,6 @@ export function ChatWindow({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -106,8 +109,6 @@ export function ChatWindow({
 
     const userText = input.trim();
     setInput("");
-
-    // Functional update prevents stale state / “setMessages” weirdness during rerenders.
     setMessages((prev) => [...prev, { role: "user", content: userText }]);
     setSending(true);
 
@@ -115,6 +116,7 @@ export function ChatWindow({
       const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // NOTE: we send last known messages + the new user message
         body: JSON.stringify({ messages: [...messages, { role: "user", content: userText }] }),
       });
 
@@ -124,11 +126,6 @@ export function ChatWindow({
       }
 
       const data = await res.json().catch(() => null);
-
-      // Support a few shapes:
-      // - { content: "..." }
-      // - { message: "..." }
-      // - { output: "..." }
       const reply =
         (data && (data.content ?? data.message ?? data.output)) ||
         "Received, but no response payload was returned.";
@@ -169,21 +166,24 @@ export function ChatWindow({
         <div className="px-3 pb-3">
           <ChatInput
             value={input}
-            onChange={setInput}
-            onSubmit={send}
+            onChange={(e) => setInput(e.target.value)}
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
+            }}
             placeholder={placeholder ?? "Ask something…"}
             disabled={sending}
             right={
               <button
-                type="button"
+                type="submit"
                 disabled={!canSend}
-                onClick={send}
                 className={cn(
                   "rounded-2xl border px-4 py-2 text-xs uppercase tracking-widest transition",
                   canSend
                     ? "border-cyan-400/30 bg-cyan-950/20 text-cyan-200/90 hover:border-cyan-300/40"
                     : "border-slate-700/50 bg-black/30 text-slate-500"
                 )}
+                title={sending ? "Sending…" : "Send"}
               >
                 {sending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Send"}
               </button>
@@ -217,7 +217,6 @@ export function ChatWindow({
         <div ref={endRef} />
       </div>
 
-      {/* Upload modal */}
       {uploadOpen ? (
         <div className="fixed inset-0 z-50">
           <button
