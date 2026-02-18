@@ -1,41 +1,32 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, Paperclip } from "lucide-react";
+
+// IMPORTANT: UploadDocumentsForm is a DEFAULT export in your project
 import UploadDocumentsForm from "./UploadDocumentsForm";
 
 type Role = "user" | "assistant";
-export type Message = { role: Role; content: string };
+
+export type Message = {
+  role: Role;
+  content: string;
+};
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function ChatLayout({
-  header,
-  children,
-  footer,
-  className,
-}: {
-  header?: React.ReactNode;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("flex h-full flex-col", className)}>
-      {header ? <div className="shrink-0">{header}</div> : null}
-      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
-      {footer ? <div className="shrink-0">{footer}</div> : null}
-    </div>
-  );
+/**
+ * ChatLayout: tiny wrapper used by /langgraph and anywhere else.
+ */
+export function ChatLayout({ children }: { children: React.ReactNode }) {
+  return <div className="flex h-full w-full flex-col">{children}</div>;
 }
 
 /**
- * IMPORTANT:
- * langgraph/page.tsx expects DOM-event style handlers:
- *   onChange={(e) => setX(e.target.value)}
- *   onSubmit={(e) => { e.preventDefault(); ... }}
+ * ChatInput: used by ChatWindow and also imported by /langgraph.
+ * - Supports BOTH `right` and `actions` (alias) so older/newer callers work.
  */
 export function ChatInput({
   value,
@@ -44,6 +35,7 @@ export function ChatInput({
   placeholder,
   disabled,
   right,
+  actions,
 }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -51,12 +43,12 @@ export function ChatInput({
   placeholder?: string;
   disabled?: boolean;
   right?: React.ReactNode;
+  actions?: React.ReactNode; // alias used by some pages
 }) {
+  const trailing = actions ?? right;
+
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex items-end gap-2"
-    >
+    <form onSubmit={onSubmit} className="flex items-end gap-2">
       <textarea
         value={value}
         onChange={onChange}
@@ -69,154 +61,182 @@ export function ChatInput({
           disabled && "opacity-60"
         )}
         onKeyDown={(e) => {
+          // Enter submits, Shift+Enter newline
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            // submit the form
             (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
           }
         }}
       />
-      {right}
+      {trailing}
     </form>
   );
 }
 
 export function ChatWindow({
   endpoint,
-  emoji,
+  emoji = "🤖",
   placeholder,
   emptyStateComponent,
 }: {
-  endpoint: string; // e.g. "api/chat"
+  endpoint: string; // e.g. "api/chat" or "/api/chat"
   emoji?: string;
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+
+  // Upload dialog state (used by the Paperclip button)
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const scrollToEnd = useCallback(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
+  const normalizedEndpoint = useMemo(() => {
+    // allow "api/chat" or "/api/chat"
+    if (!endpoint.startsWith("/")) return `/${endpoint}`;
+    return endpoint;
+  }, [endpoint]);
 
-  const send = useCallback(async () => {
-    if (!canSend) return;
+  useEffect(() => {
+    // keep scrolled to bottom
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, isSending]);
 
-    const userText = input.trim();
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text || isSending) return;
+
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userText }]);
-    setSending(true);
+    setIsSending(true);
+
+    // Add user message immediately
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
 
     try {
-      const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
+      const res = await fetch(normalizedEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // NOTE: we send last known messages + the new user message
-        body: JSON.stringify({ messages: [...messages, { role: "user", content: userText }] }),
+        // Send full conversation so the backend can maintain context
+        body: JSON.stringify({
+          messages: [...messages, { role: "user", content: text }],
+        }),
       });
 
+      const data = await res.json().catch(() => null);
+
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `HTTP ${res.status}`);
+        const msg = (data && (data.error || data.message)) || `Request failed (${res.status})`;
+        setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${msg}` }]);
+        return;
       }
 
-      const data = await res.json().catch(() => null);
-      const reply =
-        (data && (data.content ?? data.message ?? data.output)) ||
-        "Received, but no response payload was returned.";
+      // Accept a few common shapes:
+      // 1) { content: "..." }
+      // 2) { message: "..." }
+      // 3) { messages: [...], output: "..." }
+      const assistantText =
+        (data && (data.content || data.message || data.output)) ??
+        (typeof data === "string" ? data : null) ??
+        "OK.";
 
-      setMessages((prev) => [...prev, { role: "assistant", content: String(reply) }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: String(assistantText) }]);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `⚠️ Chat error: ${e?.message ?? "unknown error"}` },
+        { role: "assistant", content: `Network error: ${e?.message ?? "unknown"}` },
       ]);
     } finally {
-      setSending(false);
-      setTimeout(scrollToEnd, 50);
+      setIsSending(false);
     }
-  }, [canSend, endpoint, input, messages, scrollToEnd]);
+  }
 
   return (
-    <ChatLayout
-      className="h-full"
-      header={
-        <div className="flex items-center justify-between px-3 py-2">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-slate-300/70">
-            <span className="text-base">{emoji ?? "💬"}</span>
-            <span>chat</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setUploadOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-700/60 bg-black/40 px-3 py-1.5 text-xs text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
-          >
-            <Paperclip className="h-4 w-4" />
-            Upload
-          </button>
-        </div>
-      }
-      footer={
-        <div className="px-3 pb-3">
-          <ChatInput
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-            placeholder={placeholder ?? "Ask something…"}
-            disabled={sending}
-            right={
-              <button
-                type="submit"
-                disabled={!canSend}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-xs uppercase tracking-widest transition",
-                  canSend
-                    ? "border-cyan-400/30 bg-cyan-950/20 text-cyan-200/90 hover:border-cyan-300/40"
-                    : "border-slate-700/50 bg-black/30 text-slate-500"
-                )}
-                title={sending ? "Sending…" : "Send"}
-              >
-                {sending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Send"}
-              </button>
-            }
-          />
-        </div>
-      }
-    >
-      <div className="px-3 py-2 space-y-3">
+    <ChatLayout>
+      {/* messages */}
+      <div
+        ref={listRef}
+        className="flex-1 overflow-auto rounded-2xl border border-slate-800/60 bg-black/20 p-3"
+      >
         {messages.length === 0 ? (
           emptyStateComponent ?? (
             <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-              Start a conversation.
+              {emoji} Ask me anything about squads, heroes, drone, overlord, gear…
             </div>
           )
-        ) : null}
-
-        {messages.map((m, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              "max-w-[90%] rounded-2xl border px-3 py-2 text-sm leading-relaxed",
-              m.role === "user"
-                ? "ml-auto border-cyan-400/20 bg-cyan-950/15 text-cyan-100/90"
-                : "mr-auto border-fuchsia-500/20 bg-black/30 text-slate-100/90"
-            )}
-          >
-            {m.content}
+        ) : (
+          <div className="space-y-3">
+            {messages.map((m, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "rounded-2xl border p-3 text-sm",
+                  m.role === "user"
+                    ? "ml-auto w-[min(92%,640px)] border-cyan-400/20 bg-cyan-950/15 text-slate-100"
+                    : "mr-auto w-[min(92%,640px)] border-fuchsia-500/20 bg-black/35 text-slate-100"
+                )}
+              >
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/80">
+                  {m.role === "user" ? "You" : "Assistant"}
+                </div>
+                <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+              </div>
+            ))}
+            {isSending ? (
+              <div className="mr-auto flex w-[min(92%,640px)] items-center gap-2 rounded-2xl border border-slate-700/50 bg-black/30 p-3 text-sm text-slate-200/80">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                Thinking…
+              </div>
+            ) : null}
           </div>
-        ))}
-        <div ref={endRef} />
+        )}
       </div>
 
+      {/* input row */}
+      <div className="mt-2">
+        <ChatInput
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendMessage();
+          }}
+          placeholder={placeholder ?? "Type a message…"}
+          disabled={isSending}
+          actions={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUploadOpen(true)}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-2xl border border-slate-700/60 bg-black/40 px-3 py-2",
+                  "text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
+                )}
+                title="Upload screenshots"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSending || input.trim().length === 0}
+                className={cn(
+                  "rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-4 py-2",
+                  "text-xs uppercase tracking-widest text-cyan-200/90 hover:border-cyan-300/40 transition",
+                  (isSending || input.trim().length === 0) && "opacity-60"
+                )}
+              >
+                Send
+              </button>
+            </div>
+          }
+        />
+      </div>
+
+      {/* Upload modal (simple overlay) */}
       {uploadOpen ? (
         <div className="fixed inset-0 z-50">
           <button
@@ -225,7 +245,7 @@ export function ChatWindow({
             onClick={() => setUploadOpen(false)}
             className="absolute inset-0 bg-black/70 backdrop-blur-sm"
           />
-          <div className="absolute left-1/2 top-16 w-[min(880px,calc(100vw-24px))] -translate-x-1/2">
+          <div className="absolute left-1/2 top-16 w-[min(920px,calc(100vw-24px))] -translate-x-1/2">
             <div className="rounded-3xl border border-fuchsia-500/25 bg-black/60 backdrop-blur-xl shadow-[0_0_60px_rgba(168,85,247,.14)] overflow-hidden">
               <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
                 <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">UPLOAD</div>
