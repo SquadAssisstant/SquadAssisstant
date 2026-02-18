@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< HEAD
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, Paperclip } from "lucide-react";
 
@@ -8,6 +9,12 @@ import UploadDocumentsForm from "./UploadDocumentsForm";
 
 type Role = "user" | "assistant";
 
+=======
+import React, { useMemo, useState } from "react";
+
+type Role = "user" | "assistant";
+
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
 export type Message = {
   role: Role;
   content: string;
@@ -17,6 +24,7 @@ function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+<<<<<<< HEAD
 /**
  * ChatLayout: tiny wrapper used by /langgraph and anywhere else.
  */
@@ -80,12 +88,19 @@ export function ChatWindow({
   emptyStateComponent,
 }: {
   endpoint: string; // e.g. "api/chat" or "/api/chat"
+=======
+export function ChatWindow(props: {
+  endpoint: string; // e.g. "api/chat"
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
   emoji?: string;
   placeholder?: string;
   emptyStateComponent?: React.ReactNode;
 }) {
+  const { endpoint, emoji = "🤖", placeholder = "Type a message…", emptyStateComponent } = props;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+<<<<<<< HEAD
   const [isSending, setIsSending] = useState(false);
 
   // Upload dialog state (used by the Paperclip button)
@@ -121,11 +136,32 @@ export function ChatWindow({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Send full conversation so the backend can maintain context
+=======
+  const [isLoading, setIsLoading] = useState(false);
+
+  const canSend = useMemo(() => input.trim().length > 0 && !isLoading, [input, isLoading]);
+
+  async function sendMessage(e?: React.FormEvent) {
+    e?.preventDefault();
+    const text = input.trim();
+    if (!text || isLoading) return;
+
+    // push user message immediately
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
         body: JSON.stringify({
           messages: [...messages, { role: "user", content: text }],
         }),
       });
 
+<<<<<<< HEAD
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
@@ -151,10 +187,36 @@ export function ChatWindow({
       ]);
     } finally {
       setIsSending(false);
+=======
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+
+      // Support either { message: "..." } or OpenAI-style { content: "..." }
+      const data = await res.json().catch(() => null);
+
+      const assistantText =
+        (data && typeof data === "object" && (data.message ?? data.content)) ||
+        (typeof data === "string" ? data : "");
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: String(assistantText || "✅ Received (no message payload).") },
+      ]);
+    } catch (err: any) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `⚠️ Error: ${err?.message ?? String(err)}` },
+      ]);
+    } finally {
+      setIsLoading(false);
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
     }
   }
 
   return (
+<<<<<<< HEAD
     <ChatLayout>
       {/* messages */}
       <div
@@ -165,10 +227,19 @@ export function ChatWindow({
           emptyStateComponent ?? (
             <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
               {emoji} Ask me anything about squads, heroes, drone, overlord, gear…
+=======
+    <div className="h-full w-full flex flex-col">
+      <div className="flex-1 overflow-auto rounded-2xl border border-slate-800/60 bg-black/30 p-3">
+        {messages.length === 0 ? (
+          emptyStateComponent ?? (
+            <div className="text-sm text-slate-300/70">
+              {emoji} Ready. Ask me anything about squads, heroes, gear, drone, or overlord.
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
             </div>
           )
         ) : (
           <div className="space-y-3">
+<<<<<<< HEAD
             {messages.map((m, idx) => (
               <div
                 key={idx}
@@ -190,11 +261,32 @@ export function ChatWindow({
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 Thinking…
               </div>
+=======
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "rounded-2xl border p-3 text-sm leading-relaxed",
+                  m.role === "user"
+                    ? "ml-auto max-w-[85%] border-cyan-400/25 bg-cyan-950/10 text-slate-100/90"
+                    : "mr-auto max-w-[85%] border-fuchsia-500/20 bg-fuchsia-950/10 text-slate-100/90"
+                )}
+              >
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-slate-400/70">
+                  {m.role === "user" ? "you" : "assistant"}
+                </div>
+                <div className="whitespace-pre-wrap">{m.content}</div>
+              </div>
+            ))}
+            {isLoading ? (
+              <div className="text-xs text-slate-400/70">…thinking</div>
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
             ) : null}
           </div>
         )}
       </div>
 
+<<<<<<< HEAD
       {/* input row */}
       <div className="mt-2">
         <ChatInput
@@ -266,5 +358,28 @@ export function ChatWindow({
         </div>
       ) : null}
     </ChatLayout>
+=======
+      <form onSubmit={sendMessage} className="mt-2 flex items-center gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 rounded-2xl border border-slate-700/60 bg-black/40 px-4 py-3 text-sm text-slate-100/90 outline-none focus:border-fuchsia-400/40"
+        />
+        <button
+          type="submit"
+          disabled={!canSend}
+          className={cn(
+            "rounded-2xl border px-4 py-3 text-xs uppercase tracking-widest transition",
+            canSend
+              ? "border-fuchsia-400/40 bg-fuchsia-950/15 text-fuchsia-200/90 hover:bg-fuchsia-950/25"
+              : "border-slate-700/60 bg-black/30 text-slate-400/70"
+          )}
+        >
+          Send
+        </button>
+      </form>
+    </div>
+>>>>>>> 64bf71b (Fix build: chatwindow/langgraph/uploads)
   );
 }
