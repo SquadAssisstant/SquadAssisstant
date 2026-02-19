@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, ReactNode, useState } from "react";
+import React, { FormEvent, ReactNode, useMemo, useState } from "react";
 
 type Role = "user" | "assistant";
 
@@ -76,6 +76,8 @@ export function ChatWindow({
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const resolvedEndpoint = useMemo(() => (endpoint.startsWith("/") ? endpoint : `/${endpoint}`), [endpoint]);
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
@@ -86,7 +88,7 @@ export function ChatWindow({
     setLoading(true);
 
     try {
-      const res = await fetch(endpoint.startsWith("/") ? endpoint : `/${endpoint}`, {
+      const res = await fetch(resolvedEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: nextMessages }),
@@ -100,8 +102,7 @@ export function ChatWindow({
 
       const data = await res.json().catch(() => null);
       const assistantText =
-        (data && (data.output ?? data.text ?? data.message ?? data.answer)) ||
-        "OK (no message returned)";
+        (data && (data.output ?? data.text ?? data.message ?? data.answer)) || "OK (no message returned)";
 
       setMessages((prev) => [...prev, { role: "assistant", content: String(assistantText) }]);
     } catch (e: any) {
@@ -151,7 +152,7 @@ export function ChatWindow({
         disabled={loading}
         right={
           <button
-            type="submit"
+            type="button"
             disabled={loading || !value.trim()}
             className={cn(
               "rounded-2xl border border-cyan-400/25 bg-cyan-950/20 px-4 py-2",
