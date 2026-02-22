@@ -120,7 +120,7 @@ function BottomButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-4",
+        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
         "text-[11px] uppercase tracking-[0.25em] text-white",
         "hover:bg-white/15 active:scale-[0.99] transition"
       )}
@@ -154,6 +154,13 @@ export default function Home() {
   const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // Analyzer / Optimizer output
+  const [battleOut, setBattleOut] = useState<string>("");
+  const [battleBusy, setBattleBusy] = useState(false);
+
+  const [optOut, setOptOut] = useState<string>("");
+  const [optBusy, setOptBusy] = useState(false);
+
   // Upload state
   const [uploadKind, setUploadKind] = useState<UploadUIKind>("battle_report");
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -184,9 +191,23 @@ export default function Home() {
   }, [uploadKind]);
 
   function mapToBackendKind(k: UploadUIKind) {
-    // Backend doesn't have hero_skills yet — map it to hero_profile for now.
     if (k === "hero_skills") return "hero_profile";
     return k;
+  }
+
+  async function safeReadResponse(res: Response): Promise<{
+    json?: any;
+    text?: string;
+  }> {
+    const ct = res.headers.get("content-type") || "";
+    try {
+      if (ct.includes("application/json")) return { json: await res.json() };
+    } catch {}
+    try {
+      return { text: await res.text() };
+    } catch {
+      return { text: "" };
+    }
   }
 
   async function uploadSingle(file: File, uiKind: UploadUIKind) {
@@ -197,21 +218,26 @@ export default function Home() {
     const res = await fetch("/api/uploads/image", {
       method: "POST",
       body: fd,
-      credentials: "include", // IMPORTANT for your session cookie auth
+      credentials: "include",
     });
 
-    const json = await res.json().catch(() => ({} as any));
+    const payload = await safeReadResponse(res);
 
     if (!res.ok) {
-      const msg =
-        json?.error ??
-        (res.status === 401
-          ? "Unauthorized (session not detected)."
-          : `Upload failed (HTTP ${res.status}).`);
-      return { ok: false, message: msg };
+      const serverMsg =
+        payload.json?.error ??
+        payload.json?.message ??
+        payload.text?.slice(0, 180) ??
+        "";
+      const msgBase =
+        serverMsg && typeof serverMsg === "string"
+          ? serverMsg
+          : "Upload failed.";
+      return { ok: false, message: `${msgBase} (HTTP ${res.status})` };
     }
 
-    const rid = json?.reportId ?? json?.id ?? json?.uploadId ?? null;
+    const rid =
+      payload.json?.reportId ?? payload.json?.id ?? payload.json?.uploadId ?? null;
     return { ok: true, message: rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅" };
   }
 
@@ -273,10 +299,56 @@ export default function Home() {
     }
   }
 
+  async function runBattleAnalyzer() {
+    setBattleBusy(true);
+    try {
+      const res = await fetch("/api/tools/battle-report-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ limit: 50 }),
+      });
+      const payload = await safeReadResponse(res);
+      if (!res.ok) {
+        const msg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setBattleOut(`Error: ${String(msg)}`);
+        return;
+      }
+      setBattleOut(String(payload.json?.output ?? "No output"));
+    } catch (e: any) {
+      setBattleOut(`Error: ${e?.message ?? "unknown"}`);
+    } finally {
+      setBattleBusy(false);
+    }
+  }
+
+  async function runOptimizer() {
+    setOptBusy(true);
+    try {
+      const res = await fetch("/api/tools/optimizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ limit: 300 }),
+      });
+      const payload = await safeReadResponse(res);
+      if (!res.ok) {
+        const msg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setOptOut(`Error: ${String(msg)}`);
+        return;
+      }
+      setOptOut(String(payload.json?.output ?? "No output"));
+    } catch (e: any) {
+      setOptOut(`Error: ${e?.message ?? "unknown"}`);
+    } finally {
+      setOptBusy(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
-      {/* Main Chat Area (reserve space for bottom bar so it never hides buttons) */}
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[140px] pt-6">
+      {/* Main Chat Area */}
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[96px] pt-6">
         <div className="mb-3">
           <div className="text-sm font-semibold text-white/90">
             Squad Assistant
@@ -286,45 +358,31 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex-1 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div className="flex-1 min-h-0 rounded-3xl border border-white/10 bg-white/5 p-4">
           <ChatWindow
             endpoint="/api/chat"
             emoji="🧠"
             emptyStateComponent={
               <div className="text-sm text-slate-400/80">
-                Ask about squads, heroes, skills, gear, drone, overlord, and game
-                facts. Use Image Upload to add screenshots.
+                Ask about squads, heroes, skills, gear, drone, overlord, and game facts. Use Image Upload to add screenshots.
               </div>
             }
           />
         </div>
       </div>
 
-      {/* Bottom Button Row (always visible) */}
+      {/* Bottom Button Row */}
       <div className="fixed bottom-0 left-0 right-0 z-[999] border-t border-white/15 bg-slate-950">
-        <div className="mx-auto max-w-6xl px-3 py-3">
+        <div className="mx-auto max-w-6xl px-3 py-2">
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
             <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
-            <BottomButton
-              label="Overlord"
-              onClick={() => setOverlordOpen(true)}
-            />
-            <BottomButton
-              label="Battle Report Analyzer"
-              onClick={() => setBattleOpen(true)}
-            />
-            <BottomButton
-              label="Optimizer"
-              onClick={() => setOptimizerOpen(true)}
-            />
-            <BottomButton
-              label="Image Upload"
-              onClick={() => setUploadOpen(true)}
-            />
+            <BottomButton label="Overlord" onClick={() => setOverlordOpen(true)} />
+            <BottomButton label="Battle Report Analyzer" onClick={() => setBattleOpen(true)} />
+            <BottomButton label="Optimizer" onClick={() => setOptimizerOpen(true)} />
+            <BottomButton label="Image Upload" onClick={() => setUploadOpen(true)} />
           </div>
-
-          <div className="mt-2 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
+          <div className="mt-1 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
             Tools
           </div>
         </div>
@@ -352,17 +410,9 @@ export default function Home() {
         open={droneOpen}
         onClose={() => setDroneOpen(false)}
       >
-        <div className="space-y-3 text-sm text-white/70">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Drone overview
-            </div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
-              <li>Component levels (radar/engine/armor/etc.)</li>
-              <li>Boost tiers</li>
-              <li>Chip sets and per-squad chip assignment</li>
-            </ul>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          This modal is ready to be wired to your saved drone extraction table/view.
+          For now, uploads + optimizer can read drone rows via parsed.kind="drone".
         </div>
       </ModalShell>
 
@@ -373,63 +423,90 @@ export default function Home() {
         open={overlordOpen}
         onClose={() => setOverlordOpen(false)}
       >
-        <div className="space-y-3 text-sm text-white/70">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Overlord overview
-            </div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
-              <li>Training stats progression</li>
-              <li>Promotion tiers</li>
-              <li>Skill levels and unlock conditions</li>
-            </ul>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          This modal is ready to be wired to your saved overlord extraction table/view.
+          For now, uploads + optimizer can read overlord rows via parsed.kind="overlord".
         </div>
       </ModalShell>
 
-      {/* Battle Report Analyzer Modal */}
+      {/* Battle Report Analyzer Modal (UNLOCKED) */}
       <ModalShell
         title="Battle Report Analyzer"
-        subtitle="Analyze uploaded battle report screenshots"
+        subtitle="Runs analysis over your uploaded battle report records"
         open={battleOpen}
         onClose={() => setBattleOpen(false)}
       >
-        <div className="space-y-3 text-sm text-white/70">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Analyzer behavior
-            </div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
-              <li>Compare lineups and outcomes</li>
-              <li>Explain buffs/debuffs and key turns</li>
-              <li>Group by exact hero lineup</li>
-            </ul>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={runBattleAnalyzer}
+              disabled={battleBusy}
+              className={cn(
+                "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
+                "text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-300/40 transition",
+                battleBusy && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {battleBusy ? "Running..." : "Run Analyzer"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBattleOut("")}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
+            >
+              Clear
+            </button>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60">
-            Note: attacker/defender names/IDs, timestamps, and map coordinates
-            are not currently saved.
+            Reminder: attacker/defender names/IDs, timestamps, and map coordinates are not saved (by design).
+          </div>
+
+          <div className="max-h-[55vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
+            <pre className="whitespace-pre-wrap text-sm text-white/80">
+              {battleOut || "Output will appear here."}
+            </pre>
           </div>
         </div>
       </ModalShell>
 
-      {/* Optimizer Modal */}
+      {/* Optimizer Modal (UNLOCKED) */}
       <ModalShell
         title="Optimizer"
-        subtitle="Use saved hero/skills/gear/drone/overlord data to recommend best moves"
+        subtitle="Builds recommendations from your saved hero/skills/gear/drone/overlord data"
         open={optimizerOpen}
         onClose={() => setOptimizerOpen(false)}
       >
-        <div className="space-y-3 text-sm text-white/70">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Optimizer behavior
-            </div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
-              <li>Reads your saved profile state (heroes, skills, gear, etc.)</li>
-              <li>Evaluates tradeoffs and suggests swaps</li>
-              <li>Designed to avoid duplicates: saves only new variations</li>
-            </ul>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={runOptimizer}
+              disabled={optBusy}
+              className={cn(
+                "rounded-2xl border border-cyan-400/25 bg-cyan-950/20 px-4 py-2",
+                "text-xs uppercase tracking-widest text-cyan-200/90 hover:border-cyan-300/40 transition",
+                optBusy && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {optBusy ? "Running..." : "Run Optimizer"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setOptOut("")}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="max-h-[55vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
+            <pre className="whitespace-pre-wrap text-sm text-white/80">
+              {optOut || "Output will appear here."}
+            </pre>
           </div>
         </div>
       </ModalShell>
@@ -478,9 +555,7 @@ export default function Home() {
             <div className="mt-4 text-xs text-white/55">
               Selected: <span className="text-white/80">{kindLabel}</span>
               {uploadKind === "hero_skills" ? (
-                <span className="ml-2 text-white/45">
-                  (stored as Hero profile for now)
-                </span>
+                <span className="ml-2 text-white/45">(stored as Hero profile for now)</span>
               ) : null}
             </div>
           </div>
@@ -557,4 +632,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-        }
+              }
