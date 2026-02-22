@@ -253,8 +253,6 @@ export default function Home() {
   async function uploadSingle(file: File, purpose: UploadPurpose) {
     const fd = new FormData();
     fd.append("file", file);
-
-    // If your API ignores this today, that's fine.
     fd.append("purpose", purpose);
 
     const res = await fetch("/api/uploads/image", {
@@ -270,7 +268,6 @@ export default function Home() {
       return { ok: false, message: msg, json };
     }
 
-    // Keep compatibility with your existing response shape:
     const rid = json?.reportId ?? json?.id ?? json?.uploadId ?? null;
     const msg = rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅";
     return { ok: true, message: msg, json };
@@ -317,7 +314,6 @@ export default function Home() {
           message: r.message,
         });
 
-        // Live update so you can see progress even if something fails
         setUploadResults([...results]);
       }
 
@@ -448,9 +444,6 @@ export default function Home() {
               <li>Show live changes as you swap heroes/positions/gear</li>
             </ul>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
-            Uses game facts.
-          </div>
         </div>
       </ModalShell>
 
@@ -470,9 +463,6 @@ export default function Home() {
                 Explain outcomes using game facts + placement + buffs/debuffs
               </li>
             </ul>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
-            Uses game facts.
           </div>
         </div>
       </ModalShell>
@@ -540,7 +530,8 @@ export default function Home() {
             </div>
 
             <div className="mt-4 text-xs text-white/50">
-              Upload endpoint: <span className="text-white/70">/api/uploads/image</span>
+              Upload endpoint:{" "}
+              <span className="text-white/70">/api/uploads/image</span>
             </div>
           </div>
 
@@ -705,17 +696,18 @@ export default function Home() {
             </div>
 
             <ChatWindow
-              initialMessages={[
-                {
-                  role: "assistant",
-                  content:
-                    "You can ask about squads, drones, overlord, and game facts. Upload screenshots in Tools → Upload.",
-                },
-              ]}
+              endpoint="/api/chat"
+              emoji="🧠"
+              emptyStateComponent={
+                <div className="text-sm text-slate-400/80">
+                  <span className="mr-2">🧠</span>
+                  Ask about squads, drones, overlord, gear, and game facts. Use
+                  Tools → Upload to add screenshots.
+                </div>
+              }
             />
           </div>
 
-          {/* Optional global optimizer entry (kept) */}
           <button
             type="button"
             onClick={() => setOptimizerOpen(true)}
@@ -797,17 +789,16 @@ export default function Home() {
               { label: "OCR", emoji: "🔤" },
               { label: "Extract", emoji: "🧠" },
               { label: "Consent", emoji: "✅" },
-              { label: "Redact", emoji: "🕵️" },
               { label: "Index", emoji: "🗂️" },
               { label: "Save", emoji: "💾" },
             ]}
           />
 
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-white/55">
-            UI uses <span className="text-white/75">game facts</span>.
+            Uses <span className="text-white/75">game facts</span>.
           </div>
         </div>
       </div>
     </div>
   );
-             }
+      }
