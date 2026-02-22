@@ -26,7 +26,7 @@ function ModalShell({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center">
-      <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl">
+      <div className="w-full max-w-5xl rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
           <div>
             <div className="text-xs uppercase tracking-[0.35em] text-white/50">
@@ -71,11 +71,11 @@ function SquadGrid({ slot }: { slot: SquadSlot }) {
     <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="text-lg font-semibold text-white/90">{`Squad ${slot}`}</div>
       <div className="mt-1 text-sm text-white/60">
-        5 hero slots • blank until uploads
+        5 hero slots • blank until loaded
       </div>
 
       <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
-        Drone chips
+        Hero slots
       </div>
 
       <div className="mt-2 grid grid-cols-5 gap-2">
@@ -87,7 +87,11 @@ function SquadGrid({ slot }: { slot: SquadSlot }) {
         ))}
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
+        Drone chips
+      </div>
+
+      <div className="mt-2 grid grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, idx) => (
           <div
             key={`chip-${slot}-${idx}`}
@@ -97,31 +101,12 @@ function SquadGrid({ slot }: { slot: SquadSlot }) {
       </div>
 
       <div className="mt-4 text-sm text-white/55">
-        This view will later load the player’s squads + drone chip assignments.
+        (Placeholder view) This will later show the player’s real squads and chip
+        assignments.
       </div>
     </div>
   );
 }
-
-/**
- * IMPORTANT: This MUST match your backend upload API allowed kinds:
- * UploadKind = ["hero_profile","battle_report","drone","overlord","gear","unknown"]
- * :contentReference[oaicite:4]{index=4}
- */
-type UploadKind =
-  | "battle_report"
-  | "hero_profile"
-  | "drone"
-  | "overlord"
-  | "gear"
-  | "optimizer"
-  | "unknown";
-
-type UploadResult = {
-  fileName: string;
-  ok: boolean;
-  message: string;
-};
 
 function BottomButton({
   label,
@@ -135,8 +120,9 @@ function BottomButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs",
-        "uppercase tracking-[0.25em] text-white/80 hover:bg-white/10"
+        "min-w-[118px] flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3",
+        "text-[10px] sm:text-xs uppercase tracking-[0.25em] text-white/85",
+        "hover:bg-white/10 active:scale-[0.99] transition"
       )}
     >
       {label}
@@ -144,16 +130,31 @@ function BottomButton({
   );
 }
 
+/**
+ * Backend allowed kinds (current):
+ * hero_profile | battle_report | drone | overlord | gear | unknown
+ * We map "hero_skills" to hero_profile for now.
+ */
+type UploadUIKind =
+  | "battle_report"
+  | "hero_profile"
+  | "hero_skills"
+  | "gear"
+  | "drone"
+  | "overlord";
+
+type UploadResult = { fileName: string; ok: boolean; message: string };
+
 export default function Home() {
   const [squadsOpen, setSquadsOpen] = useState(false);
   const [droneOpen, setDroneOpen] = useState(false);
   const [overlordOpen, setOverlordOpen] = useState(false);
-  const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [battleOpen, setBattleOpen] = useState(false);
+  const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   // Upload state
-  const [uploadKind, setUploadKind] = useState<UploadKind>("battle_report");
+  const [uploadKind, setUploadKind] = useState<UploadUIKind>("battle_report");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
@@ -165,38 +166,37 @@ export default function Home() {
   const kindLabel = useMemo(() => {
     switch (uploadKind) {
       case "battle_report":
-        return "Battle Report";
+        return "Battle report";
       case "hero_profile":
-        return "Hero";
+        return "Hero profile";
+      case "hero_skills":
+        return "Hero skills";
+      case "gear":
+        return "Gear";
       case "drone":
         return "Drone";
       case "overlord":
         return "Overlord";
-      case "gear":
-        return "Gear";
-      case "optimizer":
-        return "Optimizer";
       default:
-        return "Unknown";
+        return "Upload";
     }
   }, [uploadKind]);
 
-  async function uploadSingle(file: File, kind: UploadKind) {
+  function mapToBackendKind(k: UploadUIKind) {
+    // Backend doesn't have hero_skills yet — map it to hero_profile for now.
+    if (k === "hero_skills") return "hero_profile";
+    return k;
+  }
+
+  async function uploadSingle(file: File, uiKind: UploadUIKind) {
     const fd = new FormData();
     fd.append("file", file);
-
-    // Your backend expects the field name "kind" (NOT "purpose")
-    // :contentReference[oaicite:5]{index=5}
-    const mappedKind =
-      kind === "optimizer" ? "unknown" : kind; // optimizer images can be stored as unknown until we split tables
-    fd.append("kind", mappedKind);
+    fd.append("kind", mapToBackendKind(uiKind));
 
     const res = await fetch("/api/uploads/image", {
       method: "POST",
       body: fd,
-      // ensure cookies are included (session cookie auth)
-      // backend requires session cookie and will 401 otherwise :contentReference[oaicite:6]{index=6}
-      credentials: "include",
+      credentials: "include", // IMPORTANT for your session cookie auth
     });
 
     const json = await res.json().catch(() => ({} as any));
@@ -206,13 +206,12 @@ export default function Home() {
         json?.error ??
         (res.status === 401
           ? "Unauthorized (session not detected)."
-          : "Upload failed.");
-      return { ok: false, message: msg, json };
+          : `Upload failed (HTTP ${res.status}).`);
+      return { ok: false, message: msg };
     }
 
     const rid = json?.reportId ?? json?.id ?? json?.uploadId ?? null;
-    const msg = rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅";
-    return { ok: true, message: msg, json };
+    return { ok: true, message: rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅" };
   }
 
   async function handleUploadFiles(files: FileList | null) {
@@ -224,16 +223,14 @@ export default function Home() {
 
     const arr = Array.from(files);
 
-    // Hard limit: 20 images
     if (arr.length > 20) {
       setUploadMsg("Please select 20 images or fewer.");
       return;
     }
 
-    // Validate: images only
     const nonImages = arr.filter((f) => !f.type.startsWith("image/"));
     if (nonImages.length > 0) {
-      setUploadMsg("Only image files are supported in this uploader.");
+      setUploadMsg("Only image files are supported.");
       return;
     }
 
@@ -277,15 +274,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
-      {/* Main chat area */}
+      {/* Main Chat Area */}
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-28 pt-6">
-        <div className="mb-3">
-          <div className="text-sm font-semibold text-white/85">
-            Squad Assistant
-          </div>
-          <div className="mt-1 text-xs text-white/55">
-            Ask about squads, drone, overlord, and game facts. Use Image Upload
-            to add screenshots.
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-white/90">
+              Squad Assistant
+            </div>
+            <div className="mt-1 text-xs text-white/55">
+              Chat above. Tools are in the bottom row.
+            </div>
           </div>
         </div>
 
@@ -295,19 +293,23 @@ export default function Home() {
             emoji="🧠"
             emptyStateComponent={
               <div className="text-sm text-slate-400/80">
-                Ask a question, then use the bottom buttons to open tools.
+                Ask about squads, heroes, skills, gear, drone, overlord, and game
+                facts. Use Image Upload to add screenshots.
               </div>
             }
           />
         </div>
       </div>
 
-      {/* Bottom button row */}
+      {/* Bottom Button Row */}
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-slate-950/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3">
+        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-3 py-3">
           <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
           <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
-          <BottomButton label="Overlord" onClick={() => setOverlordOpen(true)} />
+          <BottomButton
+            label="Overlord"
+            onClick={() => setOverlordOpen(true)}
+          />
           <BottomButton
             label="Battle Report Analyzer"
             onClick={() => setBattleOpen(true)}
@@ -323,10 +325,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Squads Modal */}
       <ModalShell
         title="Squads"
-        subtitle="Manage squad layouts and see saved hero + chip assignments."
+        subtitle="4 squads • 5 hero slots each • drone chips per squad"
         open={squadsOpen}
         onClose={() => setSquadsOpen(false)}
       >
@@ -338,68 +340,99 @@ export default function Home() {
         </div>
       </ModalShell>
 
+      {/* Drone Modal */}
       <ModalShell
         title="Drone"
-        subtitle="Drone overview and boosts."
+        subtitle="Components • boosts • chip sets (tool modal)"
         open={droneOpen}
         onClose={() => setDroneOpen(false)}
       >
         <div className="space-y-3 text-sm text-white/70">
-          <ul className="list-disc space-y-1 pl-5 text-white/65">
-            <li>Components, boosts, chip-sets</li>
-            <li>Later: show saved drone state + recommendations</li>
-          </ul>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Drone overview
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Component levels (radar/engine/armor/etc.)</li>
+              <li>Boost tiers</li>
+              <li>Chip sets and per-squad chip assignment</li>
+            </ul>
+          </div>
         </div>
       </ModalShell>
 
+      {/* Overlord Modal */}
       <ModalShell
         title="Overlord"
-        subtitle="Overlord training, promotion, and skills."
+        subtitle="Training • promotion • skills (tool modal)"
         open={overlordOpen}
         onClose={() => setOverlordOpen(false)}
       >
         <div className="space-y-3 text-sm text-white/70">
-          <ul className="list-disc space-y-1 pl-5 text-white/65">
-            <li>Training gates (HP/ATK/DEF)</li>
-            <li>Promotion levels</li>
-            <li>Skills</li>
-          </ul>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Overlord overview
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Training stats progression</li>
+              <li>Promotion tiers</li>
+              <li>Skill levels and unlock conditions</li>
+            </ul>
+          </div>
         </div>
       </ModalShell>
 
+      {/* Battle Report Analyzer Modal */}
       <ModalShell
-        title="Battle reports analyzer"
-        subtitle="Analyze reports and explain outcomes."
+        title="Battle Report Analyzer"
+        subtitle="Analyze uploaded battle report screenshots"
         open={battleOpen}
         onClose={() => setBattleOpen(false)}
       >
         <div className="space-y-3 text-sm text-white/70">
-          <ul className="list-disc space-y-1 pl-5 text-white/65">
-            <li>Analyze one report or all reports (filters)</li>
-            <li>Group by exact hero lineup</li>
-            <li>Explain outcomes using game facts + placement + buffs/debuffs</li>
-          </ul>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Analyzer behavior
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Compare lineups and outcomes</li>
+              <li>Explain buffs/debuffs and key turns</li>
+              <li>Group by exact hero lineup</li>
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60">
+            Note: attacker/defender names/IDs, timestamps, and map coordinates
+            are not currently saved.
+          </div>
         </div>
       </ModalShell>
 
+      {/* Optimizer Modal */}
       <ModalShell
         title="Optimizer"
-        subtitle="Optimize squads using game facts + your uploads."
+        subtitle="Use saved hero/skills/gear/drone/overlord data to recommend best moves"
         open={optimizerOpen}
         onClose={() => setOptimizerOpen(false)}
       >
         <div className="space-y-3 text-sm text-white/70">
-          <ul className="list-disc space-y-1 pl-5 text-white/65">
-            <li>Pull squads + gear + drone + overlord state</li>
-            <li>Apply game facts</li>
-            <li>Suggest best swaps</li>
-          </ul>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Optimizer behavior
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Reads your saved profile state (heroes, skills, gear, etc.)</li>
+              <li>Evaluates tradeoffs and suggests swaps</li>
+              <li>Designed to avoid duplicates: saves only new variations</li>
+            </ul>
+          </div>
         </div>
       </ModalShell>
 
+      {/* Upload Modal */}
       <ModalShell
-        title="Image upload"
-        subtitle="Upload up to 20 images at a time."
+        title="Image Upload"
+        subtitle="Upload up to 20 images at a time"
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
       >
@@ -411,17 +444,17 @@ export default function Home() {
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {[
-                { k: "battle_report", label: "Battle Report" },
-                { k: "hero_profile", label: "Hero" },
+                { k: "battle_report", label: "Battle report" },
+                { k: "hero_profile", label: "Hero profile" },
+                { k: "hero_skills", label: "Hero skills" },
+                { k: "gear", label: "Gear" },
                 { k: "drone", label: "Drone" },
                 { k: "overlord", label: "Overlord" },
-                { k: "gear", label: "Gear" },
-                { k: "optimizer", label: "Optimizer" },
               ].map((opt) => (
                 <button
                   key={opt.k}
                   type="button"
-                  onClick={() => setUploadKind(opt.k as UploadKind)}
+                  onClick={() => setUploadKind(opt.k as UploadUIKind)}
                   className={cn(
                     "rounded-2xl border px-3 py-3 text-left text-sm transition",
                     uploadKind === opt.k
@@ -431,15 +464,19 @@ export default function Home() {
                 >
                   <div className="font-semibold text-white/85">{opt.label}</div>
                   <div className="mt-1 text-xs text-white/55">
-                    Upload screenshots for this section
+                    Upload screenshots for this area
                   </div>
                 </button>
               ))}
             </div>
 
-            <div className="mt-4 text-xs text-white/50">
-              Upload endpoint:{" "}
-              <span className="text-white/70">/api/uploads/image</span>
+            <div className="mt-4 text-xs text-white/55">
+              Selected: <span className="text-white/80">{kindLabel}</span>
+              {uploadKind === "hero_skills" ? (
+                <span className="ml-2 text-white/45">
+                  (stored as Hero profile for now)
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -457,6 +494,7 @@ export default function Home() {
                 onChange={(e) => {
                   const files = e.target.files;
                   void handleUploadFiles(files);
+                  // allow reselecting same files
                   e.currentTarget.value = "";
                 }}
                 className="block w-full text-sm text-slate-200/80 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-4 file:py-2 file:text-xs file:uppercase file:tracking-widest file:text-fuchsia-100 hover:file:bg-fuchsia-600/30 disabled:opacity-60"
@@ -474,7 +512,7 @@ export default function Home() {
               ) : uploadMsg ? (
                 <span>{uploadMsg}</span>
               ) : (
-                <span>Chosen category: {kindLabel}. Select images to upload.</span>
+                <span>Choose images to upload.</span>
               )}
             </div>
 
@@ -515,4 +553,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-                          }
+      }
