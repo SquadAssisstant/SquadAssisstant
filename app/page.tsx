@@ -25,7 +25,7 @@ function ModalShell({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center">
+    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/60 p-3 sm:items-center">
       <div className="w-full max-w-5xl rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
           <div>
@@ -120,10 +120,11 @@ function BottomButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "min-w-[118px] flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3",
-        "text-[10px] sm:text-xs uppercase tracking-[0.25em] text-white/85",
-        "hover:bg-white/10 active:scale-[0.99] transition"
+        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-4",
+        "text-[11px] uppercase tracking-[0.25em] text-white",
+        "hover:bg-white/15 active:scale-[0.99] transition"
       )}
+      style={{ minWidth: 140 }}
     >
       {label}
     </button>
@@ -274,16 +275,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
-      {/* Main Chat Area */}
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-28 pt-6">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-white/90">
-              Squad Assistant
-            </div>
-            <div className="mt-1 text-xs text-white/55">
-              Chat above. Tools are in the bottom row.
-            </div>
+      {/* Main Chat Area (reserve space for bottom bar so it never hides buttons) */}
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[140px] pt-6">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-white/90">
+            Squad Assistant
+          </div>
+          <div className="mt-1 text-xs text-white/55">
+            Chat above. Tools are in the bottom row.
           </div>
         </div>
 
@@ -301,27 +300,33 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Bottom Button Row */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-slate-950/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-3 py-3">
-          <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
-          <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
-          <BottomButton
-            label="Overlord"
-            onClick={() => setOverlordOpen(true)}
-          />
-          <BottomButton
-            label="Battle Report Analyzer"
-            onClick={() => setBattleOpen(true)}
-          />
-          <BottomButton
-            label="Optimizer"
-            onClick={() => setOptimizerOpen(true)}
-          />
-          <BottomButton
-            label="Image Upload"
-            onClick={() => setUploadOpen(true)}
-          />
+      {/* Bottom Button Row (always visible) */}
+      <div className="fixed bottom-0 left-0 right-0 z-[999] border-t border-white/15 bg-slate-950">
+        <div className="mx-auto max-w-6xl px-3 py-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
+            <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
+            <BottomButton
+              label="Overlord"
+              onClick={() => setOverlordOpen(true)}
+            />
+            <BottomButton
+              label="Battle Report Analyzer"
+              onClick={() => setBattleOpen(true)}
+            />
+            <BottomButton
+              label="Optimizer"
+              onClick={() => setOptimizerOpen(true)}
+            />
+            <BottomButton
+              label="Image Upload"
+              onClick={() => setUploadOpen(true)}
+            />
+          </div>
+
+          <div className="mt-2 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
+            Tools
+          </div>
         </div>
       </div>
 
@@ -343,7 +348,7 @@ export default function Home() {
       {/* Drone Modal */}
       <ModalShell
         title="Drone"
-        subtitle="Components • boosts • chip sets (tool modal)"
+        subtitle="Components • boosts • chip sets"
         open={droneOpen}
         onClose={() => setDroneOpen(false)}
       >
@@ -364,7 +369,7 @@ export default function Home() {
       {/* Overlord Modal */}
       <ModalShell
         title="Overlord"
-        subtitle="Training • promotion • skills (tool modal)"
+        subtitle="Training • promotion • skills"
         open={overlordOpen}
         onClose={() => setOverlordOpen(false)}
       >
@@ -494,7 +499,6 @@ export default function Home() {
                 onChange={(e) => {
                   const files = e.target.files;
                   void handleUploadFiles(files);
-                  // allow reselecting same files
                   e.currentTarget.value = "";
                 }}
                 className="block w-full text-sm text-slate-200/80 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-4 file:py-2 file:text-xs file:uppercase file:tracking-widest file:text-fuchsia-100 hover:file:bg-fuchsia-600/30 disabled:opacity-60"
@@ -553,4 +557,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-}
+        }
