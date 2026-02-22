@@ -4,6 +4,18 @@ import { sessionCookieName, verifySession } from "@/lib/session";
 import { analyzeParsedReport } from "@/app/api/battle/_lib/analyzer";
 import { ChatOpenAI } from "@langchain/openai";
 
+type AnalysisRow = {
+  id: number | string;
+  created_at: string | null;
+  analysis: unknown;
+};
+
+type CompactRow = {
+  id: number | string;
+  created_at: string | null;
+  analysis: unknown;
+};
+
 function getCookieFromHeader(
   cookieHeader: string | null,
   name: string
@@ -11,24 +23,27 @@ function getCookieFromHeader(
   if (!cookieHeader) return undefined;
   const parts = cookieHeader.split(";").map((p) => p.trim());
   for (const p of parts) {
-    if (p.startsWith(name + "="))
+    if (p.startsWith(name + "=")) {
       return decodeURIComponent(p.slice(name.length + 1));
+    }
   }
   return undefined;
 }
 
-async function requireSessionFromReq(req: Request) {
+async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
   const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
   try {
-    return await verifySession(token);
+    const s = await verifySession(token);
+    // We only rely on profileId in this route.
+    return { profileId: String((s as any).profileId) };
   } catch {
     return null;
   }
 }
 
-async function fetchBattleReportAnalyses(profileId: string, limit: number) {
-  const sb: any = supabaseAdmin();
+async function fetchBattleReportAnalyses(profileId: string, limit: number): Promise<AnalysisRow[]> {
+  const sb = supabaseAdmin() as any;
 
   const { data, error } = await sb
     .from("battle_reports")
@@ -39,13 +54,14 @@ async function fetchBattleReportAnalyses(profileId: string, limit: number) {
 
   if (error) throw new Error(error.message);
 
-  // If your table includes other kinds, we attempt to filter locally by parsed.kind.
-  // We do NOT assume JSON filtering is enabled server-side.
-  const rows = (data ?? []).filter((r: any) => r?.parsed?.kind === "battle_report");
+  const rows: any[] = Array.isArray(data) ? data : [];
 
-  const analyses = rows.map((r: any) => ({
+  // Filter locally to battle_report only (safe even if table stores other kinds).
+  const battleOnly = rows.filter((r: any) => r?.parsed?.kind === "battle_report");
+
+  const analyses: AnalysisRow[] = battleOnly.map((r: any) => ({
     id: r.id,
-    created_at: r.created_at,
+    created_at: r.created_at ?? null,
     analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
   }));
 
@@ -67,11 +83,9 @@ export async function GET(req: Request) {
   try {
     const analyses = await fetchBattleReportAnalyses(s.profileId, limit);
     return NextResponse.json({ ok: true, count: analyses.length, analyses });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Failed to analyze" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Failed to analyze";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -86,9 +100,15 @@ export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({} as any));
-  const limit = Math.min(Math.max(Number(body?.limit ?? 200), 1), 500);
-  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  const body: unknown = await req.json().catch(() => ({}));
+  const bodyObj = (body && typeof body === "object") ? (body as Record<string, unknown>) : {};
+
+  const limitRaw = bodyObj["limit"];
+  const limit = Math.min(Math.max(Number(limitRaw ?? 200), 1), 500);
+
+  const messageRaw = bodyObj["message"];
+  const message =
+    typeof messageRaw === "string" ? messageRaw.trim() : "";
 
   try {
     const analyses = await fetchBattleReportAnalyses(s.profileId, limit);
@@ -106,7 +126,7 @@ export async function POST(req: Request) {
     }
 
     // Compact context to keep token size sane.
-    const compact = analyses.slice(0, 80).map((x) => ({
+    const compact: CompactRow[] = analyses.slice(0, 80).map((x: AnalysisRow) => ({
       id: x.id,
       created_at: x.created_at,
       analysis: x.analysis,
@@ -136,7 +156,7 @@ ${JSON.stringify(compact).slice(0, 120000)}
 `.trim();
 
     const summaryOut = await model.invoke(summaryPrompt);
-    const summary = String(summaryOut.content ?? "");
+    const summary = String((summaryOut as any)?.content ?? "");
 
     let answer = "";
     if (message) {
@@ -156,7 +176,7 @@ ${JSON.stringify(compact.slice(0, 30)).slice(0, 120000)}
 `.trim();
 
       const answerOut = await model.invoke(answerPrompt);
-      answer = String(answerOut.content ?? "");
+      answer = String((answerOut as any)?.content ?? "");
     }
 
     return NextResponse.json({
@@ -165,10 +185,8 @@ ${JSON.stringify(compact.slice(0, 30)).slice(0, 120000)}
       summary,
       answer,
     });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Failed to analyze" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Failed to analyze";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
