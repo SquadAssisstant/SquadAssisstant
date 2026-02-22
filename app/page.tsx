@@ -101,8 +101,8 @@ function SquadGrid({ slot }: { slot: SquadSlot }) {
       </div>
 
       <div className="mt-4 text-sm text-white/55">
-        (Placeholder view) This will later show the player’s real squads and chip
-        assignments.
+        (Placeholder view) This will later show the player&rsquo;s real squads
+        and chip assignments.
       </div>
     </div>
   );
@@ -134,7 +134,7 @@ function BottomButton({
 /**
  * Backend allowed kinds (current):
  * hero_profile | battle_report | drone | overlord | gear | unknown
- * We map "hero_skills" to hero_profile for now.
+ * We map hero_skills to hero_profile for now.
  */
 type UploadUIKind =
   | "battle_report"
@@ -364,7 +364,8 @@ export default function Home() {
             emoji="🧠"
             emptyStateComponent={
               <div className="text-sm text-slate-400/80">
-                Ask about squads, heroes, skills, gear, drone, overlord, and game facts. Use Image Upload to add screenshots.
+                Ask about squads, heroes, skills, gear, drone, overlord, and game
+                facts. Use Image Upload to add screenshots.
               </div>
             }
           />
@@ -377,10 +378,22 @@ export default function Home() {
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
             <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
-            <BottomButton label="Overlord" onClick={() => setOverlordOpen(true)} />
-            <BottomButton label="Battle Report Analyzer" onClick={() => setBattleOpen(true)} />
-            <BottomButton label="Optimizer" onClick={() => setOptimizerOpen(true)} />
-            <BottomButton label="Image Upload" onClick={() => setUploadOpen(true)} />
+            <BottomButton
+              label="Overlord"
+              onClick={() => setOverlordOpen(true)}
+            />
+            <BottomButton
+              label="Battle Report Analyzer"
+              onClick={() => setBattleOpen(true)}
+            />
+            <BottomButton
+              label="Optimizer"
+              onClick={() => setOptimizerOpen(true)}
+            />
+            <BottomButton
+              label="Image Upload"
+              onClick={() => setUploadOpen(true)}
+            />
           </div>
           <div className="mt-1 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
             Tools
@@ -411,8 +424,12 @@ export default function Home() {
         onClose={() => setDroneOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired to your saved drone extraction table/view.
-          For now, uploads + optimizer can read drone rows via parsed.kind="drone".
+          This modal is ready to be wired to your saved drone extraction data.
+          For now, uploads + optimizer can read drone rows via{" "}
+          <span className="text-white/85">
+            parsed.kind = &quot;drone&quot;
+          </span>
+          .
         </div>
       </ModalShell>
 
@@ -424,12 +441,16 @@ export default function Home() {
         onClose={() => setOverlordOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired to your saved overlord extraction table/view.
-          For now, uploads + optimizer can read overlord rows via parsed.kind="overlord".
+          This modal is ready to be wired to your saved overlord extraction data.
+          For now, uploads + optimizer can read overlord rows via{" "}
+          <span className="text-white/85">
+            parsed.kind = &quot;overlord&quot;
+          </span>
+          .
         </div>
       </ModalShell>
 
-      {/* Battle Report Analyzer Modal (UNLOCKED) */}
+      {/* Battle Report Analyzer Modal */}
       <ModalShell
         title="Battle Report Analyzer"
         subtitle="Runs analysis over your uploaded battle report records"
@@ -461,7 +482,8 @@ export default function Home() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60">
-            Reminder: attacker/defender names/IDs, timestamps, and map coordinates are not saved (by design).
+            Reminder: attacker/defender names or IDs, timestamps, and map
+            coordinates are not saved (by design).
           </div>
 
           <div className="max-h-[55vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -472,10 +494,10 @@ export default function Home() {
         </div>
       </ModalShell>
 
-      {/* Optimizer Modal (UNLOCKED) */}
+      {/* Optimizer Modal */}
       <ModalShell
         title="Optimizer"
-        subtitle="Builds recommendations from your saved hero/skills/gear/drone/overlord data"
+        subtitle="Builds recommendations from your saved hero, skills, gear, drone, and overlord data"
         open={optimizerOpen}
         onClose={() => setOptimizerOpen(false)}
       >
@@ -555,7 +577,9 @@ export default function Home() {
             <div className="mt-4 text-xs text-white/55">
               Selected: <span className="text-white/80">{kindLabel}</span>
               {uploadKind === "hero_skills" ? (
-                <span className="ml-2 text-white/45">(stored as Hero profile for now)</span>
+                <span className="ml-2 text-white/45">
+                  (stored as Hero profile for now)
+                </span>
               ) : null}
             </div>
           </div>
@@ -632,4 +656,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-              }
+        }
