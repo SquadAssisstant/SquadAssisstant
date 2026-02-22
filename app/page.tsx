@@ -154,12 +154,10 @@ export default function Home() {
   const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  // Analyzer / Optimizer output
+  // Analyzer output + chat input
   const [battleOut, setBattleOut] = useState<string>("");
   const [battleBusy, setBattleBusy] = useState(false);
-
-  const [optOut, setOptOut] = useState<string>("");
-  const [optBusy, setOptBusy] = useState(false);
+  const [battleMsg, setBattleMsg] = useState<string>("");
 
   // Upload state
   const [uploadKind, setUploadKind] = useState<UploadUIKind>("battle_report");
@@ -195,16 +193,21 @@ export default function Home() {
     return k;
   }
 
-  async function safeReadResponse(res: Response): Promise<{
-    json?: any;
-    text?: string;
-  }> {
+  async function safeReadResponse(
+    res: Response
+  ): Promise<{ json?: any; text?: string }> {
     const ct = res.headers.get("content-type") || "";
+
     try {
       if (ct.includes("application/json")) return { json: await res.json() };
     } catch {}
+
     try {
-      return { text: await res.text() };
+      const t = await res.text();
+      if (t?.startsWith("<!DOCTYPE html")) {
+        return { text: "HTML response received (likely 404 route missing or wrong path)." };
+      }
+      return { text: t };
     } catch {
       return { text: "" };
     }
@@ -299,22 +302,26 @@ export default function Home() {
     }
   }
 
-  async function runBattleAnalyzer() {
+  async function runBattleSummary() {
     setBattleBusy(true);
     try {
-      const res = await fetch("/api/tools/battle-report-analyze", {
+      const res = await fetch("/api/battle/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ limit: 50 }),
+        body: JSON.stringify({ limit: 200 }),
       });
+
       const payload = await safeReadResponse(res);
+
       if (!res.ok) {
         const msg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
         setBattleOut(`Error: ${String(msg)}`);
         return;
       }
-      setBattleOut(String(payload.json?.output ?? "No output"));
+
+      const summary = String(payload.json?.summary ?? "");
+      setBattleOut(summary || "No summary returned.");
     } catch (e: any) {
       setBattleOut(`Error: ${e?.message ?? "unknown"}`);
     } finally {
@@ -322,26 +329,43 @@ export default function Home() {
     }
   }
 
-  async function runOptimizer() {
-    setOptBusy(true);
+  async function askBattleAnalyzer() {
+    const msg = battleMsg.trim();
+    if (!msg) return;
+
+    setBattleBusy(true);
     try {
-      const res = await fetch("/api/tools/optimizer", {
+      const res = await fetch("/api/battle/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ limit: 300 }),
+        body: JSON.stringify({ limit: 200, message: msg }),
       });
+
       const payload = await safeReadResponse(res);
+
       if (!res.ok) {
-        const msg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
-        setOptOut(`Error: ${String(msg)}`);
+        const m = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setBattleOut((prev) => `${prev}\n\n---\n\nError: ${String(m)}`);
         return;
       }
-      setOptOut(String(payload.json?.output ?? "No output"));
+
+      const summary = String(payload.json?.summary ?? "");
+      const answer = String(payload.json?.answer ?? "");
+
+      setBattleOut((prev) => {
+        const parts: string[] = [];
+        if (prev.trim()) parts.push(prev.trim());
+        if (summary.trim()) parts.push("Summary:\n" + summary.trim());
+        if (answer.trim()) parts.push("Answer:\n" + answer.trim());
+        return parts.join("\n\n---\n\n");
+      });
+
+      setBattleMsg("");
     } catch (e: any) {
-      setOptOut(`Error: ${e?.message ?? "unknown"}`);
+      setBattleOut((prev) => `${prev}\n\n---\n\nError: ${e?.message ?? "unknown"}`);
     } finally {
-      setOptBusy(false);
+      setBattleBusy(false);
     }
   }
 
@@ -425,7 +449,7 @@ export default function Home() {
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           This modal is ready to be wired to your saved drone extraction data.
-          For now, uploads + optimizer can read drone rows via{" "}
+          For now, uploads + future optimizer can read drone rows via{" "}
           <span className="text-white/85">
             parsed.kind = &quot;drone&quot;
           </span>
@@ -442,7 +466,7 @@ export default function Home() {
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           This modal is ready to be wired to your saved overlord extraction data.
-          For now, uploads + optimizer can read overlord rows via{" "}
+          For now, uploads + future optimizer can read overlord rows via{" "}
           <span className="text-white/85">
             parsed.kind = &quot;overlord&quot;
           </span>
@@ -450,10 +474,10 @@ export default function Home() {
         </div>
       </ModalShell>
 
-      {/* Battle Report Analyzer Modal */}
+      {/* Battle Report Analyzer Modal (UNLOCKED + CHAT) */}
       <ModalShell
         title="Battle Report Analyzer"
-        subtitle="Runs analysis over your uploaded battle report records"
+        subtitle="Runs analysis over your saved battle report history and lets you ask follow-up questions"
         open={battleOpen}
         onClose={() => setBattleOpen(false)}
       >
@@ -461,7 +485,7 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={runBattleAnalyzer}
+              onClick={runBattleSummary}
               disabled={battleBusy}
               className={cn(
                 "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
@@ -469,7 +493,7 @@ export default function Home() {
                 battleBusy && "opacity-50 cursor-not-allowed"
               )}
             >
-              {battleBusy ? "Running..." : "Run Analyzer"}
+              {battleBusy ? "Running..." : "Run Summary"}
             </button>
 
             <button
@@ -486,50 +510,52 @@ export default function Home() {
             coordinates are not saved (by design).
           </div>
 
-          <div className="max-h-[55vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="max-h-[45vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
             <pre className="whitespace-pre-wrap text-sm text-white/80">
               {battleOut || "Output will appear here."}
             </pre>
           </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs uppercase tracking-[0.25em] text-white/50">
+              Ask the analyzer
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={battleMsg}
+                onChange={(e) => setBattleMsg(e.target.value)}
+                placeholder="Ask about why a battle went wrong, what to change, lineup ideas, etc."
+                className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                disabled={battleBusy}
+              />
+              <button
+                type="button"
+                onClick={askBattleAnalyzer}
+                disabled={battleBusy || !battleMsg.trim()}
+                className={cn(
+                  "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-widest text-white/80 hover:bg-white/15",
+                  (battleBusy || !battleMsg.trim()) && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                Send
+              </button>
+            </div>
+          </div>
         </div>
       </ModalShell>
 
-      {/* Optimizer Modal */}
+      {/* Optimizer Modal (shell only for now) */}
       <ModalShell
         title="Optimizer"
-        subtitle="Builds recommendations from your saved hero, skills, gear, drone, and overlord data"
+        subtitle="This will be wired after the battle analyzer math pipeline is fully confirmed"
         open={optimizerOpen}
         onClose={() => setOptimizerOpen(false)}
       >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={runOptimizer}
-              disabled={optBusy}
-              className={cn(
-                "rounded-2xl border border-cyan-400/25 bg-cyan-950/20 px-4 py-2",
-                "text-xs uppercase tracking-widest text-cyan-200/90 hover:border-cyan-300/40 transition",
-                optBusy && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {optBusy ? "Running..." : "Run Optimizer"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setOptOut("")}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
-            >
-              Clear
-            </button>
-          </div>
-
-          <div className="max-h-[55vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
-            <pre className="whitespace-pre-wrap text-sm text-white/80">
-              {optOut || "Output will appear here."}
-            </pre>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          Optimizer is not wired yet. Next step is to reuse the battle analyzer
+          math core and then pull from: AI facts DB, battle analyzer history,
+          squads, drone, and overlord state. Then it becomes chat-driven like the
+          analyzer.
         </div>
       </ModalShell>
 
@@ -656,4 +682,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-        }
+  }
