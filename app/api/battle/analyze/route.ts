@@ -4,45 +4,44 @@ import { sessionCookieName, verifySession } from "@/lib/session";
 import { analyzeParsedReport } from "@/app/api/battle/_lib/analyzer";
 import { ChatOpenAI } from "@langchain/openai";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type SessionLite = { profileId: string };
+
+type FetchedRow = {
+  id: number | string;
+  created_at: string | null;
+  parsed: any;
+};
+
 type AnalysisRow = {
   id: number | string;
   created_at: string | null;
-  analysis: unknown;
+  analysis: any;
 };
 
-type CompactRow = {
-  id: number | string;
-  created_at: string | null;
-  analysis: unknown;
-};
-
-function getCookieFromHeader(
-  cookieHeader: string | null,
-  name: string
-): string | undefined {
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
   const parts = cookieHeader.split(";").map((p) => p.trim());
   for (const p of parts) {
-    if (p.startsWith(name + "=")) {
-      return decodeURIComponent(p.slice(name.length + 1));
-    }
+    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
   }
   return undefined;
 }
 
-async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
+async function requireSessionFromReq(req: Request): Promise<SessionLite | null> {
   const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
   try {
     const s = await verifySession(token);
-    // We only rely on profileId in this route.
     return { profileId: String((s as any).profileId) };
   } catch {
     return null;
   }
 }
 
-async function fetchBattleReportAnalyses(profileId: string, limit: number): Promise<AnalysisRow[]> {
+async function fetchRows(profileId: string, limit: number): Promise<FetchedRow[]> {
   const sb = supabaseAdmin() as any;
 
   const { data, error } = await sb
@@ -55,78 +54,178 @@ async function fetchBattleReportAnalyses(profileId: string, limit: number): Prom
   if (error) throw new Error(error.message);
 
   const rows: any[] = Array.isArray(data) ? data : [];
-
-  // Filter locally to battle_report only (safe even if table stores other kinds).
-  const battleOnly = rows.filter((r: any) => r?.parsed?.kind === "battle_report");
-
-  const analyses: AnalysisRow[] = battleOnly.map((r: any) => ({
+  return rows.map((r: any) => ({
     id: r.id,
     created_at: r.created_at ?? null,
-    analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
+    parsed: r.parsed ?? null,
   }));
-
-  return analyses;
 }
 
-/**
- * GET: Debug batch analysis.
- * Example: /api/battle/analyze?limit=200
- */
-export async function GET(req: Request) {
-  const s = await requireSessionFromReq(req);
-  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+function looksLikeDetailRequest(message: string): boolean {
+  const m = message.toLowerCase();
+  const triggers = [
+    "explain",
+    "why",
+    "break down",
+    "breakdown",
+    "details",
+    "more detail",
+    "more info",
+    "walk me through",
+    "show math",
+    "math",
+    "step by step",
+    "in depth",
+    "deep",
+    "analyze deeper",
+    "full",
+    "expand",
+  ];
+  return triggers.some((t) => m.includes(t));
+}
 
-  const url = new URL(req.url);
-  const limitRaw = url.searchParams.get("limit");
-  const limit = Math.min(Math.max(Number(limitRaw ?? 200), 1), 500);
-
+function safeString(x: unknown): string {
+  if (typeof x === "string") return x;
   try {
-    const analyses = await fetchBattleReportAnalyses(s.profileId, limit);
-    return NextResponse.json({ ok: true, count: analyses.length, analyses });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed to analyze";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return JSON.stringify(x);
+  } catch {
+    return String(x);
   }
 }
 
 /**
- * POST: Chat-ready analyzer.
+ * Deterministic "simple" summary from analyses, no LLM required.
+ * We keep it generic because we don't know the exact analysis schema returned by analyzeParsedReport.
+ */
+function makeSimpleSummary(analyses: AnalysisRow[]): string {
+  const n = analyses.length;
+  const latest = analyses[0]?.created_at ? `Latest: ${analyses[0].created_at}` : "Latest: unknown";
+  return [
+    `Battle report analyzer (simple mode)`,
+    `Reports found: ${n}`,
+    latest,
+    ``,
+    `Tip: Ask a specific question, or say &quot;explain more&quot; if you want a deeper breakdown.`,
+  ].join("\n");
+}
+
+/**
+ * GET: debug quickly in browser
+ */
+export async function GET(req: Request) {
+  const s = await requireSessionFromReq(req);
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const url = new URL(req.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50), 1), 500);
+
+  try {
+    const rows = await fetchRows(s.profileId, limit);
+    const battleOnly = rows.filter((r) => r?.parsed?.kind === "battle_report");
+
+    const analyses: AnalysisRow[] = battleOnly.map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
+    }));
+
+    return NextResponse.json({
+      ok: true,
+      fetched: rows.length,
+      battleCount: analyses.length,
+      summary: makeSimpleSummary(analyses),
+      analyses,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
+
+/**
+ * POST: runs ONLY when user triggers it.
  * Body:
- *  { limit?: number, message?: string }
- * Returns:
- *  { ok, count, summary, answer }
+ *  { limit?: number, message?: string, detail?: boolean }
+ *
+ * Behavior:
+ * - Always returns simple summary.
+ * - Only produces a detailed/LLM answer if the user explicitly asks for more detail
+ *   (or detail=true).
  */
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
-  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const body: unknown = await req.json().catch(() => ({}));
-  const bodyObj = (body && typeof body === "object") ? (body as Record<string, unknown>) : {};
+  const body: any = await req.json().catch(() => ({}));
+  const limit = Math.min(Math.max(Number(body?.limit ?? 200), 1), 500);
 
-  const limitRaw = bodyObj["limit"];
-  const limit = Math.min(Math.max(Number(limitRaw ?? 200), 1), 500);
-
-  const messageRaw = bodyObj["message"];
-  const message =
-    typeof messageRaw === "string" ? messageRaw.trim() : "";
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  const detailFlag = Boolean(body?.detail);
+  const wantsDetail = detailFlag || (message ? looksLikeDetailRequest(message) : false);
 
   try {
-    const analyses = await fetchBattleReportAnalyses(s.profileId, limit);
+    const rows = await fetchRows(s.profileId, limit);
+    const battleOnly = rows.filter((r) => r?.parsed?.kind === "battle_report");
+
+    const analyses: AnalysisRow[] = battleOnly.map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
+    }));
+
+    const simpleSummary = makeSimpleSummary(analyses);
 
     if (analyses.length === 0) {
       return NextResponse.json({
         ok: true,
         count: 0,
         summary:
-          "No saved battle report records were found yet for your profile. Upload battle report screenshots first.",
+          "No saved battle report records were found yet. Upload battle report screenshots first.",
         answer: message
           ? "I do not have saved battle report data yet. Upload screenshots, then ask again."
           : "",
+        mode: "simple",
       });
     }
 
-    // Compact context to keep token size sane.
-    const compact: CompactRow[] = analyses.slice(0, 80).map((x: AnalysisRow) => ({
+    // If no message, just return simple summary and stop (no LLM).
+    if (!message) {
+      return NextResponse.json({
+        ok: true,
+        count: analyses.length,
+        summary: simpleSummary,
+        answer: "",
+        mode: "simple",
+      });
+    }
+
+    // If the user asked something but did NOT ask for detail:
+    // We respond briefly, without LLM (cheap/free).
+    if (!wantsDetail) {
+      return NextResponse.json({
+        ok: true,
+        count: analyses.length,
+        summary: simpleSummary,
+        answer:
+          "I can help. Ask one specific question about the battle reports (for example: which lineup pattern is losing), or say &quot;explain more&quot; if you want a deeper breakdown.",
+        mode: "simple",
+      });
+    }
+
+    // User explicitly wants detail → we MAY use LLM if key exists.
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({
+        ok: true,
+        count: analyses.length,
+        summary: simpleSummary,
+        answer:
+          "Detailed mode needs an LLM provider key. You can still use simple mode for free, or add an LLM key to enable detailed explanations.",
+        mode: "simple",
+      });
+    }
+
+    // Compact context for LLM
+    const compact = analyses.slice(0, 60).map((x: AnalysisRow) => ({
       id: x.id,
       created_at: x.created_at,
       analysis: x.analysis,
@@ -137,56 +236,31 @@ export async function POST(req: Request) {
       temperature: 0.2,
     });
 
-    const summaryPrompt = `
+    const prompt = `
 You are the Battle Report Analyzer.
-You have already-extracted analyses for battle report screenshots (not raw images).
-
 Hard rules:
-- Attacker/defender names or IDs, timestamps, and map coordinates are NOT available and must not be requested.
-- Focus on why wins/losses happened, lineup patterns, and actionable changes.
-
-Return a structured summary:
-1) Patterns (wins/losses by lineup archetype)
-2) Top 5 consistent failure causes
-3) Top 5 high-leverage fixes
-4) A short checklist for the next battle
-
-DATA:
-${JSON.stringify(compact).slice(0, 120000)}
-`.trim();
-
-    const summaryOut = await model.invoke(summaryPrompt);
-    const summary = String((summaryOut as any)?.content ?? "");
-
-    let answer = "";
-    if (message) {
-      const answerPrompt = `
-You are the Battle Report Analyzer in a conversation with a player.
-Use the analyses and the summary to answer their question.
-Match the player's tone and vocabulary. Be practical.
+- Attacker/defender names or IDs, timestamps, and map coordinates are not available.
+- Keep the answer concise first, then add a short &quot;If you want deeper detail&quot; follow-up suggestion.
 
 Player message:
 ${message}
 
-Summary:
-${summary.slice(0, 12000)}
-
-Analyses sample:
-${JSON.stringify(compact.slice(0, 30)).slice(0, 120000)}
+Data (analyses):
+${safeString(compact).slice(0, 120000)}
 `.trim();
 
-      const answerOut = await model.invoke(answerPrompt);
-      answer = String((answerOut as any)?.content ?? "");
-    }
+    const out = await model.invoke(prompt);
+    const answer = String((out as any)?.content ?? "");
 
     return NextResponse.json({
       ok: true,
       count: analyses.length,
-      summary,
+      summary: simpleSummary,
       answer,
+      mode: "detailed",
     });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed to analyze";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "Failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-}
+        }
