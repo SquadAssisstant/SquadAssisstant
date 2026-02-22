@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { ChatWindow } from "@/components/ChatWindow";
 
 type SquadSlot = 1 | 2 | 3 | 4;
@@ -29,63 +30,66 @@ function AppGroupCard({
   const CardInner = (
     <div
       className={cn(
-        "rounded-2xl border border-fuchsia-500/30 bg-black/35 backdrop-blur",
-        "p-4 shadow-[0_0_0_1px_rgba(236,72,153,.15),0_0_30px_rgba(168,85,247,.10)]",
-        disabled ? "opacity-55" : "hover:border-fuchsia-400/50 hover:bg-black/45",
-        "transition"
+        "group relative w-full rounded-3xl border border-white/10 bg-white/5 p-5 text-left",
+        "hover:border-white/20 hover:bg-white/7 transition",
+        "shadow-[0_0_30px_rgba(255,255,255,.05)]"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm tracking-wide text-fuchsia-200/90">{title}</div>
-          {subtitle ? <div className="mt-1 text-xs text-slate-300/70">{subtitle}</div> : null}
+          <div className="text-base font-semibold tracking-wide text-white/90">
+            {title}
+          </div>
+          {subtitle ? (
+            <div className="mt-1 text-xs leading-relaxed text-white/60">
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
+
+        {badge ? (
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70">
+            {badge}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+          {disabled ? "soon" : href || onClick ? "open" : ""}
         </div>
 
         <div className="flex items-center gap-2">
-          {badge ? (
-            <div className="rounded-full border border-cyan-400/25 bg-cyan-950/20 px-2 py-0.5 text-[10px] uppercase tracking-widest text-cyan-200/80">
-              {badge}
-            </div>
-          ) : null}
-          <div className="text-[10px] uppercase tracking-widest text-slate-400/70">
-            {disabled ? "soon" : href || onClick ? "open" : ""}
-          </div>
+          {(icons ?? [
+            { label: "App", emoji: "🧩" },
+            { label: "App", emoji: "⚔️" },
+            { label: "App", emoji: "🛰️" },
+            { label: "App", emoji: "📈" },
+            { label: "App", emoji: "⚙️" },
+            { label: "App", emoji: "📷" },
+            { label: "App", emoji: "🧠" },
+            { label: "App", emoji: "✅" },
+          ]).map((it, idx) => (
+            <span
+              key={`${it.label}-${idx}`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-sm"
+              title={it.label}
+            >
+              {it.emoji}
+            </span>
+          ))}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-4 gap-2">
-        {(icons ?? [
-          { label: "App", emoji: "🧠" },
-          { label: "App", emoji: "⚔️" },
-          { label: "App", emoji: "🛰️" },
-          { label: "App", emoji: "🧩" },
-          { label: "App", emoji: "🛡️" },
-          { label: "App", emoji: "💥" },
-          { label: "App", emoji: "📈" },
-          { label: "App", emoji: "🧪" },
-        ]).map((it, idx) => (
-          <div
-            key={`${it.label}-${idx}`}
-            className={cn(
-              "aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40",
-              "flex items-center justify-center",
-              "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
-            )}
-            title={it.label}
-          >
-            <span className="text-lg">{it.emoji}</span>
-          </div>
-        ))}
+      <div className="mt-3 text-xs text-white/50">
+        {disabled ? (
+          <span>Not wired yet.</span>
+        ) : href ? (
+          <span>
+            Link: <span className="text-white/70">{href}</span>
+          </span>
+        ) : null}
       </div>
-
-      {disabled ? (
-        <div className="mt-3 text-xs text-slate-400/70">Not wired yet.</div>
-      ) : href ? (
-        <div className="mt-3 text-xs text-slate-300/80">
-          <span className="text-slate-400/70">Link:</span>{" "}
-          <span className="underline decoration-fuchsia-500/40 underline-offset-4">{href}</span>
-        </div>
-      ) : null}
     </div>
   );
 
@@ -93,45 +97,17 @@ function AppGroupCard({
 
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl"
-      >
+      <button type="button" onClick={onClick} className="w-full">
         {CardInner}
       </button>
     );
   }
 
   if (href) {
-    return (
-      <a href={href} className="block focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40 rounded-2xl">
-        {CardInner}
-      </a>
-    );
+    return <Link href={href}>{CardInner}</Link>;
   }
 
   return CardInner;
-}
-
-function AddTile({ label, sublabel }: { label: string; sublabel?: string }) {
-  return (
-    <div
-      className={cn(
-        "relative aspect-square overflow-hidden rounded-2xl",
-        "border border-slate-700/50 bg-black/40",
-        "shadow-[inset_0_0_0_1px_rgba(148,163,184,.06)]"
-      )}
-      title={label}
-    >
-      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.35em] text-slate-200/70">
-        ADD
-      </div>
-      <div className="absolute bottom-1 left-1 right-1 truncate rounded-xl bg-black/50 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-200/70">
-        {label}{sublabel ? ` • ${sublabel}` : ""}
-      </div>
-    </div>
-  );
 }
 
 function ModalShell({
@@ -150,49 +126,41 @@ function ModalShell({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="absolute left-1/2 top-16 w-[min(980px,calc(100vw-24px))] -translate-x-1/2">
-        <div
-          className={cn(
-            "rounded-3xl border border-fuchsia-500/25 bg-black/55 backdrop-blur-xl",
-            "shadow-[0_0_0_1px_rgba(236,72,153,.14),0_0_60px_rgba(168,85,247,.14)]",
-            "overflow-hidden"
-          )}
-        >
-          <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4">
-            <div className="flex items-baseline gap-3">
-              <div className="text-sm tracking-[0.25em] text-fuchsia-200/90">{title.toUpperCase()}</div>
-              {subtitle ? <div className="text-xs text-slate-300/70">{subtitle}</div> : null}
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center">
+      <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <div className="text-xs uppercase tracking-[0.35em] text-white/50">
+              {title.toUpperCase()}
             </div>
-
-            {/* X = minimize */}
-            <button
-              type="button"
-              onClick={onClose}
-              className={cn(
-                "rounded-full border border-slate-700/60 bg-black/40 px-3 py-1",
-                "text-xs uppercase tracking-widest text-slate-200/80",
-                "hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
-              )}
-              aria-label="Minimize"
-              title="Minimize"
-            >
-              ✕
-            </button>
+            {subtitle ? (
+              <div className="mt-2 text-sm leading-relaxed text-white/70">
+                {subtitle}
+              </div>
+            ) : null}
           </div>
 
-          <div className="p-5">{children}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            aria-label="Close modal"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
 
-          <div className="flex items-center justify-end border-t border-slate-800/60 px-5 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl border border-slate-700/60 bg-black/40 px-4 py-2 text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
-            >
-              Minimize
-            </button>
-          </div>
+        <div className="p-5">{children}</div>
+
+        <div className="flex justify-end border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/80 hover:bg-white/10"
+          >
+            Minimize
+          </button>
         </div>
       </div>
     </div>
@@ -201,111 +169,206 @@ function ModalShell({
 
 function SquadGrid({ slot }: { slot: SquadSlot }) {
   return (
-    <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">{`Squad ${slot}`}</div>
-          <div className="mt-1 text-xs text-slate-300/70">5 hero slots • blank until uploads</div>
-        </div>
-        <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">Drone chips</div>
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <div className="text-lg font-semibold text-white/90">{`Squad ${slot}`}</div>
+      <div className="mt-1 text-sm text-white/60">
+        5 hero slots • blank until uploads
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[1fr_280px]">
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, idx) => (
-            <AddTile key={idx} label={`Hero ${idx + 1}`} />
-          ))}
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <AddTile key={idx} label={`Chip Set ${idx + 1}`} sublabel="(later)" />
-          ))}
-        </div>
+      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
+        Drone chips
       </div>
 
-      <div className="mt-3 text-xs text-slate-300/70">
-        This view will later load the player’s squads + drone chip assignments from profile state.
+      <div className="mt-2 grid grid-cols-5 gap-2">
+        {Array.from({ length: 5 }).map((_, idx) => (
+          <div
+            key={`hero-${slot}-${idx}`}
+            className="h-12 rounded-2xl border border-white/10 bg-black/20"
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {Array.from({ length: 4 }).map((_, idx) => (
+          <div
+            key={`chip-${slot}-${idx}`}
+            className="h-10 rounded-2xl border border-white/10 bg-black/20"
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 text-sm text-white/55">
+        This view will later load the player’s squads + drone chip assignments
+        from profile state.
       </div>
     </div>
   );
 }
+
+type UploadPurpose = "battle_report" | "optimizer" | "general";
+
+type UploadResult = {
+  fileName: string;
+  ok: boolean;
+  message: string;
+};
 
 export default function Home() {
   const [squadsOpen, setSquadsOpen] = useState(false);
   const [droneOpen, setDroneOpen] = useState(false);
   const [overlordOpen, setOverlordOpen] = useState(false);
   const [researchOpen, setResearchOpen] = useState(false);
-
   const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [battleOpen, setBattleOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  // Image upload UI state
+  // Upload state
+  const [uploadPurpose, setUploadPurpose] = useState<UploadPurpose>(
+    "battle_report"
+  );
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+
+  const purposeLabel = useMemo(() => {
+    switch (uploadPurpose) {
+      case "battle_report":
+        return "Battle report";
+      case "optimizer":
+        return "Optimizer input";
+      default:
+        return "General upload";
+    }
+  }, [uploadPurpose]);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
-  async function handleUpload(file: File) {
+  async function uploadSingle(file: File, purpose: UploadPurpose) {
+    const fd = new FormData();
+    fd.append("file", file);
+
+    // If your API ignores this today, that's fine.
+    fd.append("purpose", purpose);
+
+    const res = await fetch("/api/uploads/image", {
+      method: "POST",
+      body: fd,
+    });
+
+    const json = await res.json().catch(() => ({} as any));
+
+    if (!res.ok) {
+      const msg =
+        json?.error ? `Upload failed: ${json.error}` : "Upload failed.";
+      return { ok: false, message: msg, json };
+    }
+
+    // Keep compatibility with your existing response shape:
+    const rid = json?.reportId ?? json?.id ?? json?.uploadId ?? null;
+    const msg = rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅";
+    return { ok: true, message: msg, json };
+  }
+
+  async function handleUploadFiles(files: FileList | null) {
     setUploadMsg(null);
+    setUploadResults([]);
+    setUploadProgress(null);
+
+    if (!files || files.length === 0) return;
+
+    const arr = Array.from(files);
+
+    // Hard limit: 20 images
+    if (arr.length > 20) {
+      setUploadMsg("Please select 20 images or fewer.");
+      return;
+    }
+
+    // Validate: images only
+    const nonImages = arr.filter((f) => !f.type.startsWith("image/"));
+    if (nonImages.length > 0) {
+      setUploadMsg("Only image files are supported in this uploader.");
+      return;
+    }
+
     setUploadBusy(true);
+
     try {
-      const fd = new FormData();
-      fd.append("file", file);
+      setUploadProgress({ current: 0, total: arr.length });
 
-      const res = await fetch("/api/uploads/image", {
-        method: "POST",
-        body: fd,
-      });
+      const results: UploadResult[] = [];
 
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setUploadMsg(json?.error ? `Upload failed: ${json.error}` : "Upload failed.");
-        return;
+      for (let i = 0; i < arr.length; i++) {
+        setUploadProgress({ current: i + 1, total: arr.length });
+
+        const file = arr[i];
+        const r = await uploadSingle(file, uploadPurpose);
+
+        results.push({
+          fileName: file.name,
+          ok: r.ok,
+          message: r.message,
+        });
+
+        // Live update so you can see progress even if something fails
+        setUploadResults([...results]);
       }
 
-      setUploadMsg(`Uploaded ✅ reportId=${json.reportId ?? "?"}`);
+      const okCount = results.filter((r) => r.ok).length;
+      const failCount = results.length - okCount;
+
+      setUploadMsg(
+        failCount === 0
+          ? `Done ✅ Uploaded ${okCount}/${results.length} (${purposeLabel}).`
+          : `Done ⚠️ Uploaded ${okCount}/${results.length} (${purposeLabel}). Failed: ${failCount}.`
+      );
     } catch (e: any) {
       setUploadMsg(`Upload failed: ${e?.message ?? "unknown error"}`);
     } finally {
       setUploadBusy(false);
+      setUploadProgress(null);
     }
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(1200px_circle_at_15%_10%,rgba(168,85,247,.25),transparent_45%),radial-gradient(1000px_circle_at_85%_20%,rgba(236,72,153,.18),transparent_42%),radial-gradient(900px_circle_at_55%_85%,rgba(34,211,238,.14),transparent_45%),linear-gradient(to_bottom,rgba(2,6,23,1),rgba(0,0,0,1))]">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
       {/* Top bar */}
-      <div className="sticky top-0 z-20 border-b border-fuchsia-500/20 bg-black/50 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="flex items-baseline gap-3">
-            <div className="text-xl font-semibold tracking-[0.35em] text-fuchsia-200 drop-shadow-[0_0_12px_rgba(236,72,153,.35)]">
+      <div className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/85 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold tracking-wide">
               SQUAD ASSISTANT
             </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-[10px] uppercase tracking-widest text-slate-400/80">
-              prod: <span className="text-emerald-300/90">live</span>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-white/45">
+              prod: live
             </div>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-2xl border border-slate-700/60 bg-black/40 px-3 py-1 text-xs uppercase tracking-widest text-slate-200/80 hover:border-fuchsia-400/40 hover:text-fuchsia-200/90 transition"
-            >
-              Log out
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/80 hover:bg-white/10"
+          >
+            Log out
+          </button>
         </div>
       </div>
 
       {/* Modals */}
-      <ModalShell title="Squads" subtitle="All squads + drone chip sets (structure only)" open={squadsOpen} onClose={() => setSquadsOpen(false)}>
-        <div className="space-y-4">
+      <ModalShell
+        title="Squads"
+        subtitle="Manage squad layouts and see saved hero + chip assignments."
+        open={squadsOpen}
+        onClose={() => setSquadsOpen(false)}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
           <SquadGrid slot={1} />
           <SquadGrid slot={2} />
           <SquadGrid slot={3} />
@@ -313,296 +376,438 @@ export default function Home() {
         </div>
       </ModalShell>
 
-      <ModalShell title="Drone" subtitle="Game facts + player-driven state later" open={droneOpen} onClose={() => setDroneOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-          Drone overview will be populated from:
-          <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
-            <li>Drone components (Radar, Turbo Engine, External Armor, Thermal Imager, Fuel Cell, Airborne Missile)</li>
-            <li>Combat Boost stages + chip-set unlocks</li>
-            <li>Per-squad chip assignments (shown in Squads modal)</li>
-          </ul>
-          <div className="mt-3 text-xs text-slate-300/70">
-            API: <span className="underline decoration-fuchsia-500/40 underline-offset-4">/api/drone</span>
+      <ModalShell
+        title="Drone"
+        subtitle="Drone overview and boosts."
+        open={droneOpen}
+        onClose={() => setDroneOpen(false)}
+      >
+        <div className="space-y-3 text-sm text-white/70">
+          <div>
+            Drone overview will be populated from:
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>
+                Drone components (Radar, Turbo Engine, External Armor, Thermal
+                Imager, Fuel Cell, Airborne Missile)
+              </li>
+              <li>Combat Boost stages + chip-set unlocks</li>
+              <li>Per-squad chip assignments (shown in Squads modal)</li>
+            </ul>
+          </div>
+          <div className="text-xs text-white/45">API: /api/drone</div>
+        </div>
+      </ModalShell>
+
+      <ModalShell
+        title="Overlord"
+        subtitle="Overlord training, skills, and progression."
+        open={overlordOpen}
+        onClose={() => setOverlordOpen(false)}
+      >
+        <div className="space-y-3 text-sm text-white/70">
+          <div>
+            Overlord overview will be populated from:
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Training (HP/ATK/DEF) gates</li>
+              <li>Promotion levels</li>
+              <li>Bond / partner levels</li>
+              <li>Overlord skills (scalable)</li>
+            </ul>
+          </div>
+          <div className="text-xs text-white/45">API: /api/overlord</div>
+        </div>
+      </ModalShell>
+
+      <ModalShell
+        title="Research"
+        subtitle="Controlled search + curated ingestion (placeholder for stability)."
+        open={researchOpen}
+        onClose={() => setResearchOpen(false)}
+      >
+        <div className="space-y-2 text-sm text-white/70">
+          <p>
+            Research will become the “controlled search + curated ingestion”
+            area.
+          </p>
+          <p>For now: placeholder so the UI stays stable while we build.</p>
+        </div>
+      </ModalShell>
+
+      <ModalShell
+        title="Optimizer workspace"
+        subtitle="Profile-wide optimizer (modal for now)."
+        open={optimizerOpen}
+        onClose={() => setOptimizerOpen(false)}
+      >
+        <div className="space-y-3 text-sm text-white/70">
+          <div>
+            Optimizer will:
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Pull your squads + gear + drone + overlord assignments</li>
+              <li>Apply game facts (heroes, skills, gear, drone, overlord)</li>
+              <li>Show live changes as you swap heroes/positions/gear</li>
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
+            Uses game facts.
           </div>
         </div>
       </ModalShell>
 
-      <ModalShell title="Overlord" subtitle="Game facts + player-driven state later" open={overlordOpen} onClose={() => setOverlordOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-          Overlord overview will be populated from:
-          <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
-            <li>Training (HP/ATK/DEF) gates</li>
-            <li>Promotion levels</li>
-            <li>Bond / partner levels</li>
-            <li>Overlord skills (scalable)</li>
-          </ul>
-          <div className="mt-3 text-xs text-slate-300/70">
-            API: <span className="underline decoration-fuchsia-500/40 underline-offset-4">/api/overlord</span>
+      <ModalShell
+        title="Battle reports analyzer"
+        subtitle="Analyze reports and explain outcomes."
+        open={battleOpen}
+        onClose={() => setBattleOpen(false)}
+      >
+        <div className="space-y-3 text-sm text-white/70">
+          <div>
+            Analyzer will:
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-white/65">
+              <li>Analyze one report or all reports (with filters)</li>
+              <li>Group by exact hero lineup (not just hero type)</li>
+              <li>
+                Explain outcomes using game facts + placement + buffs/debuffs
+              </li>
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
+            Uses game facts.
           </div>
         </div>
       </ModalShell>
 
-      <ModalShell title="Research" subtitle="Placeholder for controlled learning + math references" open={researchOpen} onClose={() => setResearchOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-          Research will become the “controlled search + curated ingestion” area.
-          <div className="mt-3 text-xs text-slate-300/70">
-            For now: a placeholder so the UI is stable while we build analyzer/optimizer.
-          </div>
-        </div>
-      </ModalShell>
-
-      <ModalShell title="Optimizer" subtitle="Uses game facts + your profile state (coming next)" open={optimizerOpen} onClose={() => setOptimizerOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-          Optimizer Workspace will:
-          <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
-            <li>Pull your squads + gear + drone + overlord assignments</li>
-            <li>Apply game facts (heroes, skills, gear, drone, overlord)</li>
-            <li>Show live changes as you swap heroes/positions/gear</li>
-          </ul>
-          <div className="mt-3 text-xs text-slate-300/70">
-            “Truths” wording removed — this uses <span className="text-slate-200/80">game facts</span>.
-          </div>
-        </div>
-      </ModalShell>
-
-      <ModalShell title="Battle Reports Analyzer" subtitle="Upload → parse → compare → explain (coming next)" open={battleOpen} onClose={() => setBattleOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4 text-sm text-slate-200/80">
-          Analyzer will:
-          <ul className="mt-3 list-disc pl-5 text-xs text-slate-300/70 space-y-1">
-            <li>Analyze one report or all reports (with filters)</li>
-            <li>Group by exact hero lineup (not just hero type)</li>
-            <li>Explain outcomes using game facts + placement + buffs/debuffs</li>
-          </ul>
-          <div className="mt-3 text-xs text-slate-300/70">
-            “Truths” wording removed — this uses <span className="text-slate-200/80">game facts</span>.
-          </div>
-        </div>
-      </ModalShell>
-
-      <ModalShell title="Image Upload" subtitle="Upload screenshots/photos for ingestion" open={uploadOpen} onClose={() => setUploadOpen(false)}>
-        <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-          <div className="text-sm text-slate-200/80">Upload an image (game screenshot or camera photo)</div>
-          <div className="mt-2 text-xs text-slate-300/70">
-            This posts to <span className="text-slate-200/80">/api/uploads/image</span>. If you’re not logged in, it will 401.
-          </div>
-
-          <div className="mt-4 flex flex-col gap-3">
-            <input
-              type="file"
-              accept="image/*"
-              disabled={uploadBusy}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                void handleUpload(f);
-                e.currentTarget.value = "";
-              }}
-              className="block w-full text-sm text-slate-200/80 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-4 file:py-2 file:text-xs file:uppercase file:tracking-widest file:text-fuchsia-100 hover:file:bg-fuchsia-600/30"
-            />
-
-            <div className="text-xs text-slate-300/70">
-              {uploadBusy ? "Uploading…" : uploadMsg ? uploadMsg : "Choose an image to upload."}
+      <ModalShell
+        title="Upload"
+        subtitle="Upload up to 20 images at a time."
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+      >
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Upload purpose
             </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => setUploadPurpose("battle_report")}
+                className={cn(
+                  "rounded-2xl border px-3 py-3 text-left text-sm transition",
+                  uploadPurpose === "battle_report"
+                    ? "border-fuchsia-300/40 bg-fuchsia-500/10"
+                    : "border-white/10 bg-white/5 hover:bg-white/10"
+                )}
+              >
+                <div className="font-semibold text-white/85">Battle report</div>
+                <div className="mt-1 text-xs text-white/55">
+                  Screenshots used by the analyzer
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUploadPurpose("optimizer")}
+                className={cn(
+                  "rounded-2xl border px-3 py-3 text-left text-sm transition",
+                  uploadPurpose === "optimizer"
+                    ? "border-cyan-300/40 bg-cyan-500/10"
+                    : "border-white/10 bg-white/5 hover:bg-white/10"
+                )}
+              >
+                <div className="font-semibold text-white/85">Optimizer</div>
+                <div className="mt-1 text-xs text-white/55">
+                  Profile images needed for optimization
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUploadPurpose("general")}
+                className={cn(
+                  "rounded-2xl border px-3 py-3 text-left text-sm transition",
+                  uploadPurpose === "general"
+                    ? "border-emerald-300/40 bg-emerald-500/10"
+                    : "border-white/10 bg-white/5 hover:bg-white/10"
+                )}
+              >
+                <div className="font-semibold text-white/85">General</div>
+                <div className="mt-1 text-xs text-white/55">
+                  Anything else (images only)
+                </div>
+              </button>
+            </div>
+
+            <div className="mt-4 text-xs text-white/50">
+              Upload endpoint: <span className="text-white/70">/api/uploads/image</span>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">
+              Select up to 20 images
+            </div>
+            <div className="mt-2 text-xs text-white/55">
+              Tip: you can multi-select from your gallery.
+            </div>
+
+            <div className="mt-4">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={uploadBusy}
+                onChange={(e) => {
+                  const files = e.target.files;
+                  void handleUploadFiles(files);
+                  // reset so user can re-pick same files
+                  e.currentTarget.value = "";
+                }}
+                className="block w-full text-sm text-slate-200/80 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-4 file:py-2 file:text-xs file:uppercase file:tracking-widest file:text-fuchsia-100 hover:file:bg-fuchsia-600/30 disabled:opacity-60"
+              />
+            </div>
+
+            <div className="mt-3 text-sm text-white/70">
+              {uploadBusy ? (
+                <span>
+                  Uploading…{" "}
+                  {uploadProgress
+                    ? `${uploadProgress.current}/${uploadProgress.total}`
+                    : ""}
+                </span>
+              ) : uploadMsg ? (
+                <span>{uploadMsg}</span>
+              ) : (
+                <span>Choose images to upload.</span>
+              )}
+            </div>
+
+            {uploadResults.length > 0 ? (
+              <div className="mt-4 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+                  Results
+                </div>
+                <ul className="mt-2 space-y-2">
+                  {uploadResults.map((r) => (
+                    <li
+                      key={`${r.fileName}-${r.message}`}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-white/85">
+                          {r.fileName}
+                        </div>
+                        <div className="text-xs text-white/55">{r.message}</div>
+                      </div>
+                      <div
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]",
+                          r.ok
+                            ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                            : "border border-rose-400/30 bg-rose-500/10 text-rose-200"
+                        )}
+                      >
+                        {r.ok ? "ok" : "fail"}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         </div>
       </ModalShell>
 
       {/* 3-column layout */}
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[260px_1fr_260px]">
-        {/* Left: now 4 system cards */}
-        <aside className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">systems</div>
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-12">
+        {/* Left */}
+        <div className="space-y-3 lg:col-span-3">
+          <div className="text-xs uppercase tracking-[0.35em] text-white/40">
+            systems
+          </div>
 
           <AppGroupCard
             title="Squads"
-            subtitle="All 4 squads + drone chips"
+            subtitle="4 squads • hero slots + chip assignments"
             onClick={() => setSquadsOpen(true)}
             icons={[
               { label: "S1", emoji: "①" },
               { label: "S2", emoji: "②" },
               { label: "S3", emoji: "③" },
               { label: "S4", emoji: "④" },
-              { label: "Heroes", emoji: "🛡️" },
+              { label: "Heroes", emoji: "🧍" },
               { label: "Heroes", emoji: "✈️" },
-              { label: "Heroes", emoji: "🚀" },
-              { label: "Chips", emoji: "🧩" },
+              { label: "Heroes", emoji: "🛡️" },
+              { label: "Chips", emoji: "💾" },
             ]}
           />
 
           <AppGroupCard
             title="Drone"
-            subtitle="Components + combat boost"
+            subtitle="Components • boosts • chip-sets"
             onClick={() => setDroneOpen(true)}
             icons={[
               { label: "Radar", emoji: "📡" },
-              { label: "Engine", emoji: "🧯" },
+              { label: "Engine", emoji: "🧰" },
               { label: "Armor", emoji: "🛡️" },
               { label: "Thermal", emoji: "🌡️" },
               { label: "Fuel", emoji: "⛽" },
               { label: "Missile", emoji: "🚀" },
               { label: "Boost", emoji: "⚡" },
-              { label: "Chips", emoji: "🧩" },
+              { label: "Chips", emoji: "💾" },
             ]}
           />
 
           <AppGroupCard
             title="Overlord"
-            subtitle="Train + promote + bond"
+            subtitle="Training • promotion • skills"
             onClick={() => setOverlordOpen(true)}
             icons={[
               { label: "Train", emoji: "🏋️" },
               { label: "Promote", emoji: "⬆️" },
               { label: "Bond", emoji: "🤝" },
-              { label: "Skills", emoji: "🧠" },
+              { label: "Skills", emoji: "📘" },
               { label: "HP", emoji: "❤️" },
               { label: "ATK", emoji: "⚔️" },
               { label: "DEF", emoji: "🛡️" },
-              { label: "Gorilla", emoji: "🦍" },
+              { label: "Core", emoji: "🧬" },
             ]}
           />
 
           <AppGroupCard
             title="Research"
-            subtitle="Controlled learning (later)"
+            subtitle="Curate and ingest game facts (placeholder)"
             onClick={() => setResearchOpen(true)}
             icons={[
               { label: "Web", emoji: "🌐" },
-              { label: "Math", emoji: "🧮" },
-              { label: "Notes", emoji: "📝" },
+              { label: "Math", emoji: "➗" },
+              { label: "Notes", emoji: "🗒️" },
               { label: "Approve", emoji: "✅" },
-              { label: "Extract", emoji: "🧲" },
-              { label: "Index", emoji: "📚" },
+              { label: "Extract", emoji: "🧠" },
+              { label: "Index", emoji: "🗂️" },
               { label: "Query", emoji: "🔎" },
               { label: "Rules", emoji: "⚙️" },
             ]}
           />
-        </aside>
+        </div>
 
-        {/* Center: chat */}
-        <main className="space-y-3">
-          <div className="h-[70vh] rounded-2xl border border-fuchsia-500/20 bg-black/25 backdrop-blur p-2 shadow-[0_0_40px_rgba(168,85,247,.08)]">
+        {/* Center */}
+        <div className="lg:col-span-6">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-white/85">
+                Game facts are live.
+              </div>
+              <div className="mt-1 text-xs text-white/55">
+                Try: “Explain drone components and what they boost.”
+              </div>
+            </div>
+
             <ChatWindow
-              endpoint="api/chat"
-              emoji="🤖"
-              placeholder="Ask about heroes, skills, star gates, gear, drone, or overlord…"
-              emptyStateComponent={
-                <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-4">
-                  <div className="text-sm text-slate-200/80">Game facts are live.</div>
-                  <div className="mt-2 text-xs text-slate-400/80">
-                    Try: “Explain drone components and what they boost.”
-                  </div>
-                </div>
-              }
+              initialMessages={[
+                {
+                  role: "assistant",
+                  content:
+                    "You can ask about squads, drones, overlord, and game facts. Upload screenshots in Tools → Upload.",
+                },
+              ]}
             />
           </div>
 
-          {/* Optional: keep your global optimizer entry as a modal now */}
+          {/* Optional global optimizer entry (kept) */}
           <button
             type="button"
             onClick={() => setOptimizerOpen(true)}
             className={cn(
-              "block w-full rounded-2xl border border-cyan-400/25 bg-cyan-950/15 p-4 text-left",
+              "mt-4 block w-full rounded-2xl border border-cyan-400/25 bg-cyan-950/15 p-4 text-left",
               "hover:border-cyan-300/35 hover:bg-cyan-950/20 transition",
               "shadow-[0_0_30px_rgba(34,211,238,.08)]"
             )}
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm tracking-wide text-cyan-200/90">Optimizer Workspace</div>
-                <div className="mt-1 text-xs text-slate-300/70">Profile-wide optimizer (modal for now)</div>
-              </div>
-              <div className="text-lg">📊</div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-8 gap-2">
-              {["🛡️", "✈️", "🚀", "⚙️", "🛰️", "🦍", "⭐", "🧠"].map((emoji, i) => (
-                <div
-                  key={`${emoji}-${i}`}
-                  className="aspect-square rounded-xl border border-slate-700/50 bg-slate-950/40 flex items-center justify-center"
-                >
-                  <span className="text-lg">{emoji}</span>
+                <div className="text-base font-semibold text-white/90">
+                  Optimizer Workspace
                 </div>
-              ))}
+                <div className="mt-1 text-xs text-white/55">
+                  Profile-wide optimizer (modal for now)
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {["🧍", "✈️", "🛡️", "⚙️", "🛰️", "🧠", "⭐", "✅"].map((emoji, i) => (
+                  <span
+                    key={`${emoji}-${i}`}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-2xl border border-cyan-200/15 bg-cyan-500/10 text-sm"
+                  >
+                    {emoji}
+                  </span>
+                ))}
+              </div>
             </div>
           </button>
-        </main>
+        </div>
 
-        {/* Right: tools (rearranged per your new plan) */}
-        <aside className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400/80">tools</div>
+        {/* Right */}
+        <div className="space-y-3 lg:col-span-3">
+          <div className="text-xs uppercase tracking-[0.35em] text-white/40">
+            tools
+          </div>
 
-          <AppGroupCard
-            title="Heroes Listing"
-            subtitle="Game facts: heroes + skills"
-            href="/api/heroes"
-            icons={[
-              { label: "Tank", emoji: "🛡️" },
-              { label: "Air", emoji: "✈️" },
-              { label: "Missile", emoji: "🚀" },
-              { label: "UR", emoji: "💎" },
-              { label: "SSR", emoji: "🔷" },
-              { label: "SR", emoji: "🔸" },
-              { label: "Skills", emoji: "🧠" },
-              { label: "Search", emoji: "🔎" },
-            ]}
-          />
-
-          {/* Drone position -> Battle Reports Analyzer */}
           <AppGroupCard
             title="Battle Reports Analyzer"
-            subtitle="Analyze reports + explain outcomes"
+            subtitle="Analyze reports • compare lineups"
             onClick={() => setBattleOpen(true)}
             icons={[
-              { label: "Upload", emoji: "📷" },
+              { label: "Upload", emoji: "📤" },
               { label: "Parse", emoji: "🧾" },
-              { label: "Compare", emoji: "🧩" },
+              { label: "Compare", emoji: "🆚" },
               { label: "Explain", emoji: "🧠" },
-              { label: "Filter", emoji: "🎛️" },
+              { label: "Filter", emoji: "🧰" },
               { label: "Stats", emoji: "📊" },
               { label: "Matchups", emoji: "⚔️" },
-              { label: "Notes", emoji: "📝" },
+              { label: "Notes", emoji: "🗒️" },
             ]}
           />
 
-          {/* Overlord position -> Optimizer */}
           <AppGroupCard
             title="Optimizer"
-            subtitle="Live squad optimization workspace"
+            subtitle="Swap heroes • gear • drone • overlord"
             onClick={() => setOptimizerOpen(true)}
             icons={[
               { label: "Swap", emoji: "🔁" },
               { label: "Gear", emoji: "⚙️" },
               { label: "Drone", emoji: "🛰️" },
-              { label: "Overlord", emoji: "🦍" },
+              { label: "Overlord", emoji: "👑" },
               { label: "Stars", emoji: "⭐" },
-              { label: "Skills", emoji: "🧠" },
-              { label: "Compare", emoji: "📊" },
+              { label: "Skills", emoji: "📘" },
+              { label: "Compare", emoji: "🆚" },
               { label: "Result", emoji: "✅" },
             ]}
           />
 
-          {/* Drone position (your note said drone twice; this is the Upload tool slot) */}
           <AppGroupCard
-            title="Image Upload"
-            subtitle="Upload game images for extraction"
+            title="Upload"
+            subtitle="Up to 20 images per batch"
             onClick={() => setUploadOpen(true)}
             icons={[
               { label: "Camera", emoji: "📷" },
               { label: "Screenshot", emoji: "🖼️" },
               { label: "OCR", emoji: "🔤" },
-              { label: "Extract", emoji: "🧲" },
+              { label: "Extract", emoji: "🧠" },
               { label: "Consent", emoji: "✅" },
-              { label: "Redact", emoji: "🫥" },
-              { label: "Index", emoji: "📚" },
+              { label: "Redact", emoji: "🕵️" },
+              { label: "Index", emoji: "🗂️" },
               { label: "Save", emoji: "💾" },
             ]}
           />
 
-          <div className="rounded-2xl border border-slate-700/40 bg-black/30 p-3 text-xs text-slate-300/70">
-            “Truths” removed — UI now uses “game facts”.
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-white/55">
+            UI uses <span className="text-white/75">game facts</span>.
           </div>
-        </aside>
+        </div>
       </div>
     </div>
   );
-}
+             }
