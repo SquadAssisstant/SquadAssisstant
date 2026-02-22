@@ -84,6 +84,18 @@ function looksLikeDetailRequest(message: string): boolean {
   return triggers.some((t) => m.includes(t));
 }
 
+function makeSimpleSummary(analyses: AnalysisRow[]): string {
+  const n = analyses.length;
+  const latest = analyses[0]?.created_at ? `Latest: ${analyses[0].created_at}` : "Latest: unknown";
+  return [
+    "Battle report analyzer (simple mode)",
+    `Reports found: ${n}`,
+    latest,
+    "",
+    "Tip: Ask a specific question, or say \"explain more\" if you want a deeper breakdown.",
+  ].join("\n");
+}
+
 function safeString(x: unknown): string {
   if (typeof x === "string") return x;
   try {
@@ -91,22 +103,6 @@ function safeString(x: unknown): string {
   } catch {
     return String(x);
   }
-}
-
-/**
- * Deterministic "simple" summary from analyses, no LLM required.
- * We keep it generic because we don't know the exact analysis schema returned by analyzeParsedReport.
- */
-function makeSimpleSummary(analyses: AnalysisRow[]): string {
-  const n = analyses.length;
-  const latest = analyses[0]?.created_at ? `Latest: ${analyses[0].created_at}` : "Latest: unknown";
-  return [
-    `Battle report analyzer (simple mode)`,
-    `Reports found: ${n}`,
-    latest,
-    ``,
-    `Tip: Ask a specific question, or say &quot;explain more&quot; if you want a deeper breakdown.`,
-  ].join("\n");
 }
 
 /**
@@ -126,7 +122,7 @@ export async function GET(req: Request) {
     const analyses: AnalysisRow[] = battleOnly.map((r) => ({
       id: r.id,
       created_at: r.created_at,
-      analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
+      analysis: analyzeParsedReport(String(r.id), r.parsed ?? {}), // ✅ FIX
     }));
 
     return NextResponse.json({
@@ -149,8 +145,7 @@ export async function GET(req: Request) {
  *
  * Behavior:
  * - Always returns simple summary.
- * - Only produces a detailed/LLM answer if the user explicitly asks for more detail
- *   (or detail=true).
+ * - Only uses LLM if user explicitly asks for more detail or detail=true.
  */
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
@@ -170,7 +165,7 @@ export async function POST(req: Request) {
     const analyses: AnalysisRow[] = battleOnly.map((r) => ({
       id: r.id,
       created_at: r.created_at,
-      analysis: analyzeParsedReport(r.id, r.parsed ?? {}),
+      analysis: analyzeParsedReport(String(r.id), r.parsed ?? {}), // ✅ FIX
     }));
 
     const simpleSummary = makeSimpleSummary(analyses);
@@ -188,7 +183,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // If no message, just return simple summary and stop (no LLM).
     if (!message) {
       return NextResponse.json({
         ok: true,
@@ -199,20 +193,17 @@ export async function POST(req: Request) {
       });
     }
 
-    // If the user asked something but did NOT ask for detail:
-    // We respond briefly, without LLM (cheap/free).
     if (!wantsDetail) {
       return NextResponse.json({
         ok: true,
         count: analyses.length,
         summary: simpleSummary,
         answer:
-          "I can help. Ask one specific question about the battle reports (for example: which lineup pattern is losing), or say &quot;explain more&quot; if you want a deeper breakdown.",
+          "I can help. Ask one specific question about the battle reports (for example: which lineup pattern is losing), or say \"explain more\" if you want a deeper breakdown.",
         mode: "simple",
       });
     }
 
-    // User explicitly wants detail → we MAY use LLM if key exists.
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({
         ok: true,
@@ -224,7 +215,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Compact context for LLM
     const compact = analyses.slice(0, 60).map((x: AnalysisRow) => ({
       id: x.id,
       created_at: x.created_at,
@@ -240,7 +230,7 @@ export async function POST(req: Request) {
 You are the Battle Report Analyzer.
 Hard rules:
 - Attacker/defender names or IDs, timestamps, and map coordinates are not available.
-- Keep the answer concise first, then add a short &quot;If you want deeper detail&quot; follow-up suggestion.
+- Keep the answer concise first, then add a short "If you want deeper detail" suggestion.
 
 Player message:
 ${message}
@@ -263,4 +253,4 @@ ${safeString(compact).slice(0, 120000)}
     const msg = e instanceof Error ? e.message : "Failed";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-        }
+}
