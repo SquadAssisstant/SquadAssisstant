@@ -108,7 +108,7 @@ function SquadGrid({ slot }: { slot: SquadSlot }) {
   );
 }
 
-function BottomButton({
+function SideButton({
   label,
   onClick,
 }: {
@@ -120,11 +120,10 @@ function BottomButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
+        "w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
         "text-[11px] uppercase tracking-[0.25em] text-white",
         "hover:bg-white/15 active:scale-[0.99] transition"
       )}
-      style={{ minWidth: 140 }}
     >
       {label}
     </button>
@@ -205,7 +204,9 @@ export default function Home() {
     try {
       const t = await res.text();
       if (t?.startsWith("<!DOCTYPE html")) {
-        return { text: "HTML response received (likely 404 route missing or wrong path)." };
+        return {
+          text: "HTML response received (likely 404 route missing or wrong path).",
+        };
       }
       return { text: t };
     } catch {
@@ -240,7 +241,10 @@ export default function Home() {
     }
 
     const rid =
-      payload.json?.reportId ?? payload.json?.id ?? payload.json?.uploadId ?? null;
+      payload.json?.reportId ??
+      payload.json?.id ??
+      payload.json?.uploadId ??
+      null;
     return { ok: true, message: rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅" };
   }
 
@@ -363,66 +367,79 @@ export default function Home() {
 
       setBattleMsg("");
     } catch (e: any) {
-      setBattleOut((prev) => `${prev}\n\n---\n\nError: ${e?.message ?? "unknown"}`);
+      setBattleOut(
+        (prev) => `${prev}\n\n---\n\nError: ${e?.message ?? "unknown"}`
+      );
     } finally {
       setBattleBusy(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
-      {/* Main Chat Area */}
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[96px] pt-6">
-        <div className="mb-3">
-          <div className="text-sm font-semibold text-white/90">
-            Squad Assistant
-          </div>
-          <div className="mt-1 text-xs text-white/55">
-            Chat above. Tools are in the bottom row.
-          </div>
-        </div>
+    <div className="h-[100dvh] bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
+      <div className="mx-auto flex h-full w-full max-w-6xl gap-3 px-3 py-3">
+        {/* LEFT SIDE BUTTONS */}
+        <aside className="hidden w-[170px] flex-col gap-2 sm:flex">
+          <SideButton label="Squads" onClick={() => setSquadsOpen(true)} />
+          <SideButton label="Drone" onClick={() => setDroneOpen(true)} />
+          <SideButton label="Overlord" onClick={() => setOverlordOpen(true)} />
+        </aside>
 
-        <div className="flex-1 min-h-0 rounded-3xl border border-white/10 bg-white/5 p-4">
-          <ChatWindow
-            endpoint="/api/chat"
-            emoji="🧠"
-            emptyStateComponent={
-              <div className="text-sm text-slate-400/80">
-                Ask about squads, heroes, skills, gear, drone, overlord, and game
-                facts. Use Image Upload to add screenshots.
+        {/* CENTER CHAT: fills full height, input stays at bottom inside ChatWindow */}
+        <main className="min-w-0 flex-1">
+          <div className="flex h-full flex-col rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-white/90">
+                Squad Assistant
               </div>
-            }
-          />
-        </div>
-      </div>
+              <div className="mt-1 text-xs text-white/55">
+                Chat fills the page. Tools open from the side buttons.
+              </div>
+            </div>
 
-      {/* Bottom Button Row */}
-      <div className="fixed bottom-0 left-0 right-0 z-[999] border-t border-white/15 bg-slate-950">
-        <div className="mx-auto max-w-6xl px-3 py-2">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <BottomButton label="Squads" onClick={() => setSquadsOpen(true)} />
-            <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
-            <BottomButton
-              label="Overlord"
-              onClick={() => setOverlordOpen(true)}
-            />
-            <BottomButton
+            <div className="min-h-0 flex-1">
+              <ChatWindow
+                endpoint="/api/chat"
+                emoji="🧠"
+                emptyStateComponent={
+                  <div className="text-sm text-slate-400/80">
+                    Ask about squads, heroes, skills, gear, drone, overlord, and
+                    game facts. Use Upload to add screenshots.
+                  </div>
+                }
+              />
+            </div>
+          </div>
+
+          {/* MOBILE BUTTON ROW (optional): only shows on small screens so you’re not blocked */}
+          <div className="mt-3 flex gap-2 overflow-x-auto sm:hidden">
+            <SideButton label="Squads" onClick={() => setSquadsOpen(true)} />
+            <SideButton label="Drone" onClick={() => setDroneOpen(true)} />
+            <SideButton label="Overlord" onClick={() => setOverlordOpen(true)} />
+            <SideButton
               label="Battle Report Analyzer"
               onClick={() => setBattleOpen(true)}
             />
-            <BottomButton
+            <SideButton
               label="Optimizer"
               onClick={() => setOptimizerOpen(true)}
             />
-            <BottomButton
-              label="Image Upload"
-              onClick={() => setUploadOpen(true)}
-            />
+            <SideButton label="Upload" onClick={() => setUploadOpen(true)} />
           </div>
-          <div className="mt-1 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
-            Tools
-          </div>
-        </div>
+        </main>
+
+        {/* RIGHT SIDE BUTTONS */}
+        <aside className="hidden w-[220px] flex-col gap-2 sm:flex">
+          <SideButton
+            label="Battle Report Analyzer"
+            onClick={() => setBattleOpen(true)}
+          />
+          <SideButton
+            label="Optimizer"
+            onClick={() => setOptimizerOpen(true)}
+          />
+          <SideButton label="Upload" onClick={() => setUploadOpen(true)} />
+        </aside>
       </div>
 
       {/* Squads Modal */}
@@ -534,7 +551,8 @@ export default function Home() {
                 disabled={battleBusy || !battleMsg.trim()}
                 className={cn(
                   "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-widest text-white/80 hover:bg-white/15",
-                  (battleBusy || !battleMsg.trim()) && "opacity-50 cursor-not-allowed"
+                  (battleBusy || !battleMsg.trim()) &&
+                    "opacity-50 cursor-not-allowed"
                 )}
               >
                 Send
@@ -682,4 +700,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-  }
+                                                }
