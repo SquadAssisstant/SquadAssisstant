@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { sessionCookieName, verifySession } from "@/lib/session";
+import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { guessExtFromMime, safePathSegment } from "@/lib/upload";
-import * as exifr from "exifr";
+import { sessionCookieName, verifySession } from "@/lib/session";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
@@ -23,136 +22,103 @@ async function requireSessionFromReq(req: Request) {
   }
 }
 
-const UploadKind = ["hero_profile", "battle_report", "drone", "overlord", "gear", "unknown"] as const;
-type UploadKind = (typeof UploadKind)[number];
-
-type Provenance = "screenshot" | "camera_photo" | "web_image" | "ai_or_edited" | "unknown";
-
-function classifyProvenance(meta: any, file: { mime: string; size: number; name: string }) {
-  const hasCameraMake = !!meta?.Make || !!meta?.Model;
-  const hasSoftware = typeof meta?.Software === "string" && meta.Software.length > 0;
-  const hasDate = !!meta?.DateTimeOriginal || !!meta?.CreateDate;
-
-  const nameHint = file.name.toLowerCase().includes("screenshot");
-
-  if (hasCameraMake && hasDate) {
-    return { label: "camera_photo" as Provenance, confidence: 0.85, signals: ["EXIF Make/Model", "DateTimeOriginal"] };
-  }
-
-  if (!hasCameraMake && (nameHint || hasSoftware)) {
-    return {
-      label: "screenshot" as Provenance,
-      confidence: 0.65,
-      signals: ["No camera EXIF", nameHint ? "Filename hint" : "Software tag"],
-    };
-  }
-
-  const software = (meta?.Software ?? "").toString().toLowerCase();
-  const looksEdited = ["photoshop", "lightroom", "snapseed", "canva"].some((k) => software.includes(k));
-  if (looksEdited) {
-    return { label: "ai_or_edited" as Provenance, confidence: 0.6, signals: ["Editor software tag"] };
-  }
-
-  return { label: "unknown" as Provenance, confidence: 0.4, signals: [] as string[] };
+function safeExtFromMime(mime: string) {
+  if (mime === "image/png") return "png";
+  if (mime === "image/jpeg") return "jpg";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  return "bin";
 }
 
-function normalizeKind(input: unknown): UploadKind {
-  if (!input) return "unknown";
-  const v = String(input).trim().toLowerCase();
-  return (UploadKind as readonly string[]).includes(v) ? (v as UploadKind) : "unknown";
+function normalizeKind(kindRaw: string) {
+  // Match your frontend kinds + your current backend mapping behavior
+  const k = (kindRaw || "").trim();
+  if (!k) return "unknown";
+
+  if (k === "hero_skills") return "hero_profile";
+  // allow these
+  const allowed = new Set([
+    "battle_report",
+    "hero_profile",
+    "drone",
+    "overlord",
+    "gear",
+    "unknown",
+  ]);
+  return allowed.has(k) ? k : "unknown";
 }
 
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
-  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const form = await req.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
-
+  const form = await req.formData();
   const file = form.get("file");
+  const kindRaw = String(form.get("kind") ?? "");
+  const kind = normalizeKind(kindRaw);
+
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Missing file field named 'file'" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing file" }, { status: 400 });
+  }
+  if (!file.type?.startsWith("image/")) {
+    return NextResponse.json({ ok: false, error: "Only image uploads supported" }, { status: 400 });
   }
 
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "Only image uploads supported for now" }, { status: 400 });
-  }
+  const bytes = await file.arrayBuffer();
+  const buf = Buffer.from(bytes);
 
-  const declaredKind = normalizeKind(form.get("kind"));
+  // sha for dedupe/debug
+  const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const ext = guessExtFromMime(file.type);
+  const bucket = "uploads";
+  const ext = safeExtFromMime(file.type);
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const rand = crypto.randomBytes(6).toString("hex");
 
-  const uuid = crypto.randomUUID();
-  const baseName = safePathSegment(file.name || "upload");
-  const objectPath = `profiles/${s.profileId}/images/${uuid}_${baseName}.${ext}`;
+  // Storage path design: uploads/<profileId>/<kind>/<timestamp>_<rand>.<ext>
+  const storagePath = `${s.profileId}/${kind}/${ts}_${rand}.${ext}`;
 
-  // ✅ IMPORTANT: cast to any to avoid the "never" .from typing in production builds
-  const sb = supabaseAdmin() as any;
+  const sb: any = supabaseAdmin();
 
-  const upload = await sb.storage.from("uploads").upload(objectPath, buf, {
+  // 1) upload to storage
+  const up = await sb.storage.from(bucket).upload(storagePath, buf, {
     contentType: file.type,
     upsert: false,
   });
 
-  if (upload.error) {
-    return NextResponse.json({ error: upload.error.message }, { status: 500 });
+  if (up.error) {
+    return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
   }
 
-  let meta: any = null;
-  try {
-    meta = await exifr.parse(buf, { tiff: true, exif: true, xmp: true, gps: true, icc: false, iptc: false });
-  } catch {
-    meta = null;
-  }
-
-  const provenance = classifyProvenance(meta, { mime: file.type, size: file.size, name: file.name || "" });
-
-  const kind = declaredKind;
-  const kindConfidence = declaredKind === "unknown" ? 0.2 : 1.0;
-  const kindSignals =
-    declaredKind === "unknown" ? ["No declared kind provided"] : ["User-declared upload kind"];
-
-  const parsed = {
-    upload: {
-      filename: file.name,
-      mime: file.type,
-      size: file.size,
-      storageBucket: "uploads",
-      storagePath: objectPath,
-    },
-    provenance,
-    kind,
-    kindConfidence,
-    kindSignals,
-    declaredKind: declaredKind === "unknown" ? null : declaredKind,
-    status: "uploaded",
-  };
-
-  // This is still writing into battle_reports (as your current setup does).
-  // We'll split this later when we implement 14-page battle report containers.
+  // 2) insert pointer row
   const ins = await sb
-    .from("battle_reports")
+    .from("player_uploads")
     .insert({
       profile_id: s.profileId,
-      raw_storage_path: objectPath,
-      parsed,
-      consent_scope: "private",
+      kind,
+      storage_bucket: bucket,
+      storage_path: storagePath,
+      mime_type: file.type,
+      bytes: buf.length,
+      sha256,
     })
-    .select("id")
+    .select("id, storage_path, kind, created_at")
     .single();
 
   if (ins.error) {
-    return NextResponse.json({ error: ins.error.message }, { status: 500 });
+    // If DB insert fails, optionally you could delete the storage object
+    // to avoid orphan files. For now, keep it simple:
+    return NextResponse.json(
+      { ok: false, error: `Uploaded file but failed to save DB row: ${ins.error.message}` },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
     ok: true,
-    reportId: ins.data.id,
-    storagePath: objectPath,
-    kind,
-    kindConfidence,
-    provenance,
-    allowedKinds: UploadKind,
+    id: ins.data.id,
+    kind: ins.data.kind,
+    storage_path: ins.data.storage_path,
+    created_at: ins.data.created_at,
   });
 }
