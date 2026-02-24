@@ -15,8 +15,8 @@ async function requireSessionFromReq(req: Request): Promise<{ profileId: string 
   const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
   try {
-    const s = await verifySession(token);
-    return { profileId: String((s as any).profileId) };
+    const s: any = await verifySession(token);
+    return { profileId: String(s.profileId) };
   } catch {
     return null;
   }
@@ -28,7 +28,6 @@ type UploadRow = {
   storage_bucket: string;
   storage_path: string;
   created_at: string;
-  facts_id: number | null;
 };
 
 export async function GET(req: Request) {
@@ -43,7 +42,7 @@ export async function GET(req: Request) {
 
   const q = await sb
     .from("player_uploads")
-    .select("id, kind, storage_bucket, storage_path, created_at, facts_id")
+    .select("id, kind, storage_bucket, storage_path, created_at")
     .eq("profile_id", s.profileId)
     .eq("kind", kind)
     .order("id", { ascending: false })
@@ -53,7 +52,6 @@ export async function GET(req: Request) {
 
   const rows: UploadRow[] = (q.data ?? []) as UploadRow[];
 
-  // signed URLs for 1 hour
   const uploads = [];
   for (const r of rows) {
     const bucket = r.storage_bucket || "uploads";
@@ -62,7 +60,6 @@ export async function GET(req: Request) {
       id: r.id,
       kind: r.kind,
       created_at: r.created_at,
-      facts_id: r.facts_id,
       storage_path: r.storage_path,
       url: signed?.data?.signedUrl ?? null,
     });
