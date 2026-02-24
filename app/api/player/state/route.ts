@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { sessionCookieName, verifySession } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { sessionCookieName, verifySession } from "@/lib/session";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
@@ -21,49 +21,115 @@ async function requireSessionFromReq(req: Request) {
   }
 }
 
-export async function GET(req: Request) {
-  const s = await requireSessionFromReq(req);
-  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type PlayerStateRow = {
+  id: string | number;
+  profile_id: string;
+  state: any;
+  updated_at?: string;
+};
 
-  const sb: any = supabaseAdmin(); // ✅ hard cast to stop TS blocking
+function ensureSquadStateShape(state: any) {
+  const next = typeof state === "object" && state ? { ...state } : {};
+  if (!next.squads || typeof next.squads !== "object") next.squads = {};
 
-  const { data, error } = await sb
-    .from("player_state")
-    .select("state, updated_at")
-    .eq("profile_id", s.profileId)
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true, username: s.username, ...data });
+  for (const squad of ["1", "2", "3", "4"]) {
+    if (!next.squads[squad] || typeof next.squads[squad] !== "object") next.squads[squad] = {};
+    if (!next.squads[squad].slots || typeof next.squads[squad].slots !== "object") next.squads[squad].slots = {};
+  }
+  return next;
 }
 
-export async function PATCH(req: Request) {
+export async function GET(req: Request) {
   const s = await requireSessionFromReq(req);
-  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const sb: any = supabaseAdmin();
+
+  const q = await sb
+    .from("player_state")
+    .select("id, profile_id, state, updated_at")
+    .eq("profile_id", s.profileId)
+    .limit(1)
+    .maybeSingle();
+
+  if (q.error) return NextResponse.json({ ok: false, error: q.error.message }, { status: 500 });
+
+  const row: PlayerStateRow | null = q.data ?? null;
+  const state = ensureSquadStateShape(row?.state);
+
+  return NextResponse.json({ ok: true, state });
+}
+
+export async function POST(req: Request) {
+  const s = await requireSessionFromReq(req);
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const body = (await req.json().catch(() => null)) as
+    | { op?: "set_slot"; squad?: number; slot?: number; upload_id?: number | null }
+    | null;
+
+  if (!body || body.op !== "set_slot") {
+    return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
   }
 
-  const sb: any = supabaseAdmin(); // ✅ hard cast to stop TS blocking
+  const squad = Number(body.squad);
+  const slot = Number(body.slot);
+  const upload_id = body.upload_id === null ? null : Number(body.upload_id);
 
-  const existing = await sb
+  if (![1, 2, 3, 4].includes(squad) || ![1, 2, 3, 4, 5].includes(slot)) {
+    return NextResponse.json({ ok: false, error: "Invalid squad or slot" }, { status: 400 });
+  }
+  if (upload_id !== null && !Number.isFinite(upload_id)) {
+    return NextResponse.json({ ok: false, error: "Invalid upload_id" }, { status: 400 });
+  }
+
+  const sb: any = supabaseAdmin();
+
+  // If setting to an upload_id, make sure it belongs to this profile.
+  if (upload_id !== null) {
+    const check = await sb
+      .from("player_uploads")
+      .select("id")
+      .eq("id", upload_id)
+      .eq("profile_id", s.profileId)
+      .limit(1)
+      .maybeSingle();
+
+    if (check.error) return NextResponse.json({ ok: false, error: check.error.message }, { status: 500 });
+    if (!check.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
+  }
+
+  // Load current player_state row
+  const cur = await sb
     .from("player_state")
-    .select("state")
+    .select("id, state")
     .eq("profile_id", s.profileId)
+    .limit(1)
+    .maybeSingle();
+
+  if (cur.error) return NextResponse.json({ ok: false, error: cur.error.message }, { status: 500 });
+
+  const currentState = ensureSquadStateShape(cur.data?.state);
+  const sKey = String(squad);
+  const slotKey = String(slot);
+
+  currentState.squads[sKey].slots[slotKey] = upload_id;
+
+  // Upsert player_state row (create if missing)
+  const up = await sb
+    .from("player_state")
+    .upsert(
+      {
+        profile_id: s.profileId,
+        state: currentState,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "profile_id" }
+    )
+    .select("state")
     .single();
 
-  if (existing.error) return NextResponse.json({ error: existing.error.message }, { status: 500 });
+  if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
 
-  const merged = { ...(existing.data?.state ?? {}), ...body };
-
-  const { error } = await sb
-    .from("player_state")
-    .update({ state: merged })
-    .eq("profile_id", s.profileId);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, state: up.data.state });
 }
