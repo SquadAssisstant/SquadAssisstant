@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { ChatWindow } from "@/components/ChatWindow";
 
 type SquadSlot = 1 | 2 | 3 | 4;
+type HeroSlotIndex = 1 | 2 | 3 | 4 | 5;
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -66,49 +67,7 @@ function ModalShell({
   );
 }
 
-function SquadGrid({ slot }: { slot: SquadSlot }) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-      <div className="text-lg font-semibold text-white/90">{`Squad ${slot}`}</div>
-      <div className="mt-1 text-sm text-white/60">
-        5 hero slots • blank until loaded
-      </div>
-
-      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
-        Hero slots
-      </div>
-
-      <div className="mt-2 grid grid-cols-5 gap-2">
-        {Array.from({ length: 5 }).map((_, idx) => (
-          <div
-            key={`hero-${slot}-${idx}`}
-            className="h-12 rounded-2xl border border-white/10 bg-black/20"
-          />
-        ))}
-      </div>
-
-      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
-        Drone chips
-      </div>
-
-      <div className="mt-2 grid grid-cols-4 gap-2">
-        {Array.from({ length: 4 }).map((_, idx) => (
-          <div
-            key={`chip-${slot}-${idx}`}
-            className="h-10 rounded-2xl border border-white/10 bg-black/20"
-          />
-        ))}
-      </div>
-
-      <div className="mt-4 text-sm text-white/55">
-        (Placeholder view) This will later show the player&rsquo;s real squads
-        and chip assignments.
-      </div>
-    </div>
-  );
-}
-
-function SideButton({
+function BottomButton({
   label,
   onClick,
 }: {
@@ -120,10 +79,11 @@ function SideButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
+        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
         "text-[11px] uppercase tracking-[0.25em] text-white",
         "hover:bg-white/15 active:scale-[0.99] transition"
       )}
+      style={{ minWidth: 140 }}
     >
       {label}
     </button>
@@ -132,7 +92,7 @@ function SideButton({
 
 /**
  * Backend allowed kinds (current):
- * hero_profile | battle_report | drone | overlord | gear | unknown
+ * battle_report | hero_profile | drone | overlord | gear | unknown
  * We map hero_skills to hero_profile for now.
  */
 type UploadUIKind =
@@ -144,6 +104,198 @@ type UploadUIKind =
   | "overlord";
 
 type UploadResult = { fileName: string; ok: boolean; message: string };
+
+type HeroUpload = {
+  id: number;
+  url: string | null;
+  created_at?: string;
+  storage_path?: string;
+};
+
+type PlayerStateResponse = {
+  ok: boolean;
+  state?: any;
+  error?: string;
+};
+
+function normalizeSlotsFromState(
+  state: any
+): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  const squads = state?.squads ?? {};
+  for (const s of ["1", "2", "3", "4"]) {
+    const slots = squads?.[s]?.slots ?? {};
+    for (const k of ["1", "2", "3", "4", "5"]) {
+      const v = slots?.[k];
+      out[`${s}-${k}`] =
+        typeof v === "number" && Number.isFinite(v) ? v : null;
+    }
+  }
+  return out;
+}
+
+function SquadGrid({
+  squad,
+  slots,
+  heroUploads,
+  selectedSlot,
+  setSelectedSlot,
+  onAssign,
+  onClear,
+}: {
+  squad: SquadSlot;
+  slots: Record<string, number | null>;
+  heroUploads: HeroUpload[];
+  selectedSlot: { squad: number; slot: number } | null;
+  setSelectedSlot: (v: { squad: number; slot: number } | null) => void;
+  onAssign: (squad: number, slot: number, upload_id: number) => Promise<void>;
+  onClear: (squad: number, slot: number) => Promise<void>;
+}) {
+  const selectedThisSquad =
+    selectedSlot && selectedSlot.squad === squad ? selectedSlot.slot : null;
+
+  const uploadById = useMemo(() => {
+    const m = new Map<number, HeroUpload>();
+    for (const u of heroUploads) m.set(u.id, u);
+    return m;
+  }, [heroUploads]);
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold text-white/90">{`Squad ${squad}`}</div>
+          <div className="mt-1 text-sm text-white/60">5 hero slots</div>
+        </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (!selectedSlot || selectedSlot.squad !== squad) return;
+            await onClear(selectedSlot.squad, selectedSlot.slot);
+          }}
+          disabled={!selectedThisSquad}
+          className={cn(
+            "rounded-2xl border border-white/10 bg-white/5 px-3 py-2",
+            "text-[10px] uppercase tracking-[0.25em] text-white/70 hover:bg-white/10",
+            !selectedThisSquad && "opacity-50 cursor-not-allowed"
+          )}
+          title="Clear selected slot"
+        >
+          Clear slot
+        </button>
+      </div>
+
+      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
+        Hero slots (click a slot, then pick a hero below)
+      </div>
+
+      <div className="mt-2 grid grid-cols-5 gap-2">
+        {Array.from({ length: 5 }).map((_, idx) => {
+          const slot = (idx + 1) as HeroSlotIndex;
+          const key = `${squad}-${slot}`;
+          const uploadId = slots[key];
+          const u = uploadId ? uploadById.get(uploadId) : undefined;
+          const img = u?.url ?? null;
+
+          const isSelected =
+            selectedSlot?.squad === squad && selectedSlot?.slot === slot;
+
+          return (
+            <button
+              key={`hero-${squad}-${slot}`}
+              type="button"
+              onClick={() => setSelectedSlot({ squad, slot })}
+              className={cn(
+                "h-14 rounded-2xl border bg-black/20 overflow-hidden relative",
+                isSelected ? "border-fuchsia-300/50" : "border-white/10"
+              )}
+              title={`Squad ${squad} slot ${slot}${
+                uploadId ? ` (upload_id=${uploadId})` : ""
+              }`}
+            >
+              {img ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={img}
+                  alt={`Squad ${squad} slot ${slot}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-white/35">
+                  {slot}
+                </div>
+              )}
+
+              {uploadId ? (
+                <div className="absolute bottom-1 right-1 rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10px] text-white/70">
+                  {uploadId}
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 text-xs uppercase tracking-[0.25em] text-white/40">
+        Hero library (from uploads)
+      </div>
+
+      <div className="mt-2 grid grid-cols-6 gap-2">
+        {heroUploads.length === 0 ? (
+          <div className="col-span-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/60">
+            No hero uploads found yet. Upload hero profile screenshots in{" "}
+            <span className="text-white/80">Image Upload</span> using category{" "}
+            <span className="text-white/80">Hero profile</span>.
+          </div>
+        ) : (
+          heroUploads.slice(0, 30).map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={async () => {
+                if (!selectedSlot) return;
+                await onAssign(selectedSlot.squad, selectedSlot.slot, u.id);
+              }}
+              disabled={!selectedSlot}
+              className={cn(
+                "h-14 rounded-2xl border border-white/10 bg-black/20 overflow-hidden hover:border-white/20 transition relative",
+                !selectedSlot && "opacity-50 cursor-not-allowed"
+              )}
+              title={`Assign upload_id=${u.id}`}
+            >
+              {u.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={u.url}
+                  alt={`Hero upload ${u.id}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-white/35">
+                  {u.id}
+                </div>
+              )}
+              <div className="absolute bottom-1 left-1 rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10px] text-white/70">
+                {u.id}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="mt-3 text-xs text-white/55">
+        Selected slot:{" "}
+        <span className="text-white/80">
+          {selectedThisSquad ? `slot ${selectedThisSquad}` : "none"}
+        </span>
+        <span className="ml-2 text-white/40">
+          (Pick a slot, then click a hero image to assign.)
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const [squadsOpen, setSquadsOpen] = useState(false);
@@ -167,6 +319,13 @@ export default function Home() {
     current: number;
     total: number;
   } | null>(null);
+
+  // Squads wiring
+  const [squadsBusy, setSquadsBusy] = useState(false);
+  const [squadsMsg, setSquadsMsg] = useState<string | null>(null);
+  const [heroUploads, setHeroUploads] = useState<HeroUpload[]>([]);
+  const [slots, setSlots] = useState<Record<string, number | null>>({});
+  const [selectedSlot, setSelectedSlot] = useState<{ squad: number; slot: number } | null>(null);
 
   const kindLabel = useMemo(() => {
     switch (uploadKind) {
@@ -204,9 +363,7 @@ export default function Home() {
     try {
       const t = await res.text();
       if (t?.startsWith("<!DOCTYPE html")) {
-        return {
-          text: "HTML response received (likely 404 route missing or wrong path).",
-        };
+        return { text: "HTML response received (likely 404 route missing or wrong path)." };
       }
       return { text: t };
     } catch {
@@ -298,8 +455,9 @@ export default function Home() {
           ? `Done ✅ Uploaded ${okCount}/${results.length} (${kindLabel}).`
           : `Done ⚠️ Uploaded ${okCount}/${results.length} (${kindLabel}). Failed: ${failCount}.`
       );
-    } catch (e: any) {
-      setUploadMsg(`Upload failed: ${e?.message ?? "unknown error"}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setUploadMsg(`Upload failed: ${msg}`);
     } finally {
       setUploadBusy(false);
       setUploadProgress(null);
@@ -326,8 +484,9 @@ export default function Home() {
 
       const summary = String(payload.json?.summary ?? "");
       setBattleOut(summary || "No summary returned.");
-    } catch (e: any) {
-      setBattleOut(`Error: ${e?.message ?? "unknown"}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown";
+      setBattleOut(`Error: ${msg}`);
     } finally {
       setBattleBusy(false);
     }
@@ -366,94 +525,189 @@ export default function Home() {
       });
 
       setBattleMsg("");
-    } catch (e: any) {
-      setBattleOut(
-        (prev) => `${prev}\n\n---\n\nError: ${e?.message ?? "unknown"}`
-      );
+    } catch (e: unknown) {
+      const msg2 = e instanceof Error ? e.message : "unknown";
+      setBattleOut((prev) => `${prev}\n\n---\n\nError: ${msg2}`);
     } finally {
       setBattleBusy(false);
     }
   }
 
+  async function loadSquadsAndUploads() {
+    setSquadsBusy(true);
+    setSquadsMsg(null);
+    try {
+      const [stateRes, uploadsRes] = await Promise.all([
+        fetch("/api/player/state", { credentials: "include" }),
+        fetch("/api/uploads/list?kind=hero_profile&limit=120", { credentials: "include" }),
+      ]);
+
+      const statePayload = (await stateRes.json().catch(() => null)) as PlayerStateResponse | null;
+      const uploadsPayload = (await uploadsRes.json().catch(() => null)) as
+        | { ok?: boolean; uploads?: HeroUpload[]; error?: string }
+        | null;
+
+      if (!stateRes.ok || !statePayload?.ok) {
+        const err = statePayload?.error ?? `HTTP ${stateRes.status}`;
+        setSquadsMsg(`State load failed: ${err}`);
+      } else {
+        const state = statePayload.state ?? {};
+        setSlots(normalizeSlotsFromState(state));
+      }
+
+      if (!uploadsRes.ok || !uploadsPayload?.ok) {
+        const err = uploadsPayload?.error ?? `HTTP ${uploadsRes.status}`;
+        setSquadsMsg((prev) => (prev ? prev + " | " : "") + `Uploads load failed: ${err}`);
+        setHeroUploads([]);
+      } else {
+        setHeroUploads((uploadsPayload.uploads ?? []).map((u) => ({
+          id: Number(u.id),
+          url: u.url ?? null,
+          created_at: u.created_at,
+          storage_path: u.storage_path,
+        })));
+      }
+    } finally {
+      setSquadsBusy(false);
+    }
+  }
+
+  async function setSlot(squad: number, slot: number, upload_id: number | null) {
+    const res = await fetch("/api/player/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        op: "set_slot",
+        squad,
+        slot,
+        upload_id,
+      }),
+    });
+
+    const json = (await res.json().catch(() => null)) as PlayerStateResponse | null;
+
+    if (!res.ok || !json?.ok) {
+      const err = json?.error ?? `HTTP ${res.status}`;
+      setSquadsMsg(`Save failed: ${err}`);
+      return;
+    }
+
+    setSlots(normalizeSlotsFromState(json.state ?? {}));
+    setSquadsMsg("Saved ✅");
+  }
+
   return (
-    <div className="h-[100dvh] bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
-      <div className="mx-auto flex h-full w-full max-w-6xl gap-3 px-3 py-3">
-        {/* LEFT SIDE BUTTONS */}
-        <aside className="hidden w-[170px] flex-col gap-2 sm:flex">
-          <SideButton label="Squads" onClick={() => setSquadsOpen(true)} />
-          <SideButton label="Drone" onClick={() => setDroneOpen(true)} />
-          <SideButton label="Overlord" onClick={() => setOverlordOpen(true)} />
-        </aside>
-
-        {/* CENTER CHAT: fills full height, input stays at bottom inside ChatWindow */}
-        <main className="min-w-0 flex-1">
-          <div className="flex h-full flex-col rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="mb-3">
-              <div className="text-sm font-semibold text-white/90">
-                Squad Assistant
-              </div>
-              <div className="mt-1 text-xs text-white/55">
-                Chat fills the page. Tools open from the side buttons.
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1">
-              <ChatWindow
-                endpoint="/api/chat"
-                emoji="🧠"
-                emptyStateComponent={
-                  <div className="text-sm text-slate-400/80">
-                    Ask about squads, heroes, skills, gear, drone, overlord, and
-                    game facts. Use Upload to add screenshots.
-                  </div>
-                }
-              />
-            </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
+      {/* Main Chat Area */}
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[96px] pt-6">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-white/90">Squad Assistant</div>
+          <div className="mt-1 text-xs text-white/55">
+            Chat above. Tools are in the bottom row.
           </div>
+        </div>
 
-          {/* MOBILE BUTTON ROW (optional): only shows on small screens so you’re not blocked */}
-          <div className="mt-3 flex gap-2 overflow-x-auto sm:hidden">
-            <SideButton label="Squads" onClick={() => setSquadsOpen(true)} />
-            <SideButton label="Drone" onClick={() => setDroneOpen(true)} />
-            <SideButton label="Overlord" onClick={() => setOverlordOpen(true)} />
-            <SideButton
-              label="Battle Report Analyzer"
-              onClick={() => setBattleOpen(true)}
-            />
-            <SideButton
-              label="Optimizer"
-              onClick={() => setOptimizerOpen(true)}
-            />
-            <SideButton label="Upload" onClick={() => setUploadOpen(true)} />
-          </div>
-        </main>
-
-        {/* RIGHT SIDE BUTTONS */}
-        <aside className="hidden w-[220px] flex-col gap-2 sm:flex">
-          <SideButton
-            label="Battle Report Analyzer"
-            onClick={() => setBattleOpen(true)}
+        <div className="flex-1 min-h-0 rounded-3xl border border-white/10 bg-white/5 p-4">
+          <ChatWindow
+            endpoint="/api/chat"
+            emoji="🧠"
+            emptyStateComponent={
+              <div className="text-sm text-slate-400/80">
+                Ask about squads, heroes, skills, gear, drone, overlord, and game facts.
+                Use Image Upload to add screenshots.
+              </div>
+            }
           />
-          <SideButton
-            label="Optimizer"
-            onClick={() => setOptimizerOpen(true)}
-          />
-          <SideButton label="Upload" onClick={() => setUploadOpen(true)} />
-        </aside>
+        </div>
       </div>
 
-      {/* Squads Modal */}
+      {/* Bottom Button Row (left group + right group) */}
+      <div className="fixed bottom-0 left-0 right-0 z-[999] border-t border-white/15 bg-slate-950">
+        <div className="mx-auto max-w-6xl px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <BottomButton
+                label="Squads"
+                onClick={async () => {
+                  await loadSquadsAndUploads();
+                  setSquadsOpen(true);
+                }}
+              />
+              <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
+              <BottomButton label="Overlord" onClick={() => setOverlordOpen(true)} />
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <BottomButton
+                label="Battle Report Analyzer"
+                onClick={() => setBattleOpen(true)}
+              />
+              <BottomButton label="Optimizer" onClick={() => setOptimizerOpen(true)} />
+              <BottomButton label="Image Upload" onClick={() => setUploadOpen(true)} />
+            </div>
+          </div>
+
+          <div className="mt-1 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
+            Tools
+          </div>
+        </div>
+      </div>
+
+      {/* Squads Modal (WIRED) */}
       <ModalShell
         title="Squads"
-        subtitle="4 squads • 5 hero slots each • drone chips per squad"
+        subtitle="Assign hero images to squad slots (slot → upload_id)."
         open={squadsOpen}
         onClose={() => setSquadsOpen(false)}
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SquadGrid slot={1} />
-          <SquadGrid slot={2} />
-          <SquadGrid slot={3} />
-          <SquadGrid slot={4} />
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
+            {squadsBusy
+              ? "Loading squads + hero uploads…"
+              : squadsMsg
+              ? squadsMsg
+              : "Click a hero slot, then click a hero image to assign it. Use Clear slot to remove."}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SquadGrid
+              squad={1}
+              slots={slots}
+              heroUploads={heroUploads}
+              selectedSlot={selectedSlot}
+              setSelectedSlot={setSelectedSlot}
+              onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
+              onClear={async (sq, sl) => setSlot(sq, sl, null)}
+            />
+            <SquadGrid
+              squad={2}
+              slots={slots}
+              heroUploads={heroUploads}
+              selectedSlot={selectedSlot}
+              setSelectedSlot={setSelectedSlot}
+              onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
+              onClear={async (sq, sl) => setSlot(sq, sl, null)}
+            />
+            <SquadGrid
+              squad={3}
+              slots={slots}
+              heroUploads={heroUploads}
+              selectedSlot={selectedSlot}
+              setSelectedSlot={setSelectedSlot}
+              onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
+              onClear={async (sq, sl) => setSlot(sq, sl, null)}
+            />
+            <SquadGrid
+              squad={4}
+              slots={slots}
+              heroUploads={heroUploads}
+              selectedSlot={selectedSlot}
+              setSelectedSlot={setSelectedSlot}
+              onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
+              onClear={async (sq, sl) => setSlot(sq, sl, null)}
+            />
+          </div>
         </div>
       </ModalShell>
 
@@ -467,10 +721,7 @@ export default function Home() {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           This modal is ready to be wired to your saved drone extraction data.
           For now, uploads + future optimizer can read drone rows via{" "}
-          <span className="text-white/85">
-            parsed.kind = &quot;drone&quot;
-          </span>
-          .
+          <span className="text-white/85">kind = &quot;drone&quot;</span>.
         </div>
       </ModalShell>
 
@@ -484,10 +735,7 @@ export default function Home() {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           This modal is ready to be wired to your saved overlord extraction data.
           For now, uploads + future optimizer can read overlord rows via{" "}
-          <span className="text-white/85">
-            parsed.kind = &quot;overlord&quot;
-          </span>
-          .
+          <span className="text-white/85">kind = &quot;overlord&quot;</span>.
         </div>
       </ModalShell>
 
@@ -523,8 +771,7 @@ export default function Home() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60">
-            Reminder: attacker/defender names or IDs, timestamps, and map
-            coordinates are not saved (by design).
+            Reminder: attacker/defender names or IDs, timestamps, and map coordinates are not saved (by design).
           </div>
 
           <div className="max-h-[45vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -541,7 +788,7 @@ export default function Home() {
               <input
                 value={battleMsg}
                 onChange={(e) => setBattleMsg(e.target.value)}
-                placeholder="Ask about why a battle went wrong, what to change, lineup ideas, etc."
+                placeholder="Ask why you won/lost, strengths/weaknesses, what to change, lineup ideas, etc."
                 className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
                 disabled={battleBusy}
               />
@@ -551,8 +798,7 @@ export default function Home() {
                 disabled={battleBusy || !battleMsg.trim()}
                 className={cn(
                   "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-widest text-white/80 hover:bg-white/15",
-                  (battleBusy || !battleMsg.trim()) &&
-                    "opacity-50 cursor-not-allowed"
+                  (battleBusy || !battleMsg.trim()) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 Send
@@ -565,15 +811,14 @@ export default function Home() {
       {/* Optimizer Modal (shell only for now) */}
       <ModalShell
         title="Optimizer"
-        subtitle="This will be wired after the battle analyzer math pipeline is fully confirmed"
+        subtitle="Will reuse battle analyzer math core + pull from facts, battle history, squads, drone, overlord"
         open={optimizerOpen}
         onClose={() => setOptimizerOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          Optimizer is not wired yet. Next step is to reuse the battle analyzer
-          math core and then pull from: AI facts DB, battle analyzer history,
-          squads, drone, and overlord state. Then it becomes chat-driven like the
-          analyzer.
+          Optimizer is not wired yet. Next step is to reuse the battle analyzer math core and then pull from:
+          AI facts DB, battle analyzer history, squads, drone, and overlord state.
+          Then it becomes chat-driven like the analyzer.
         </div>
       </ModalShell>
 
@@ -586,9 +831,7 @@ export default function Home() {
       >
         <div className="space-y-4">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Upload category
-            </div>
+            <div className="text-sm font-semibold text-white/85">Upload category</div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {[
@@ -611,9 +854,7 @@ export default function Home() {
                   )}
                 >
                   <div className="font-semibold text-white/85">{opt.label}</div>
-                  <div className="mt-1 text-xs text-white/55">
-                    Upload screenshots for this area
-                  </div>
+                  <div className="mt-1 text-xs text-white/55">Upload screenshots for this area</div>
                 </button>
               ))}
             </div>
@@ -621,17 +862,13 @@ export default function Home() {
             <div className="mt-4 text-xs text-white/55">
               Selected: <span className="text-white/80">{kindLabel}</span>
               {uploadKind === "hero_skills" ? (
-                <span className="ml-2 text-white/45">
-                  (stored as Hero profile for now)
-                </span>
+                <span className="ml-2 text-white/45">(stored as Hero profile for now)</span>
               ) : null}
             </div>
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold text-white/85">
-              Select up to 20 images
-            </div>
+            <div className="text-sm font-semibold text-white/85">Select up to 20 images</div>
 
             <div className="mt-4">
               <input
@@ -652,9 +889,7 @@ export default function Home() {
               {uploadBusy ? (
                 <span>
                   Uploading…{" "}
-                  {uploadProgress
-                    ? `${uploadProgress.current}/${uploadProgress.total}`
-                    : ""}
+                  {uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : ""}
                 </span>
               ) : uploadMsg ? (
                 <span>{uploadMsg}</span>
@@ -665,9 +900,7 @@ export default function Home() {
 
             {uploadResults.length > 0 ? (
               <div className="mt-4 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs uppercase tracking-[0.25em] text-white/45">
-                  Results
-                </div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Results</div>
                 <ul className="mt-2 space-y-2">
                   {uploadResults.map((r) => (
                     <li
@@ -675,9 +908,7 @@ export default function Home() {
                       className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-sm text-white/85">
-                          {r.fileName}
-                        </div>
+                        <div className="truncate text-sm text-white/85">{r.fileName}</div>
                         <div className="text-xs text-white/55">{r.message}</div>
                       </div>
                       <div
