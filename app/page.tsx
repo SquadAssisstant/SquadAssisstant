@@ -118,20 +118,65 @@ type PlayerStateResponse = {
   error?: string;
 };
 
-function normalizeSlotsFromState(
-  state: any
-): Record<string, number | null> {
+type HeroFactsValue = {
+  hero_key?: string;
+  level?: number | null;
+  stars?: number | null;
+  gear?: any;
+  skills?: any;
+  notes?: string | null;
+};
+
+type HeroDetailsResponse = {
+  ok: boolean;
+  error?: string;
+  upload?: {
+    id: number;
+    kind: string;
+    created_at: string;
+    facts_id: string | null;
+  };
+  image_url?: string | null;
+  facts?: {
+    id: string;
+    domain: string;
+    key: string;
+    value: any;
+    status: string;
+    confidence: number | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
+};
+
+function normalizeSlotsFromState(state: any): Record<string, number | null> {
   const out: Record<string, number | null> = {};
   const squads = state?.squads ?? {};
   for (const s of ["1", "2", "3", "4"]) {
     const slots = squads?.[s]?.slots ?? {};
     for (const k of ["1", "2", "3", "4", "5"]) {
       const v = slots?.[k];
-      out[`${s}-${k}`] =
-        typeof v === "number" && Number.isFinite(v) ? v : null;
+      out[`${s}-${k}`] = typeof v === "number" && Number.isFinite(v) ? v : null;
     }
   }
   return out;
+}
+
+function safeNum(v: unknown): number | null {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function tryParseJson(text: string): any | null {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    return JSON.parse(t);
+  } catch {
+    // Don’t block saves just because JSON is not valid.
+    // Store raw string so you can fix later.
+    return { _raw: t };
+  }
 }
 
 function SquadGrid({
@@ -142,6 +187,7 @@ function SquadGrid({
   setSelectedSlot,
   onAssign,
   onClear,
+  onOpenHeroDetails,
 }: {
   squad: SquadSlot;
   slots: Record<string, number | null>;
@@ -150,6 +196,7 @@ function SquadGrid({
   setSelectedSlot: (v: { squad: number; slot: number } | null) => void;
   onAssign: (squad: number, slot: number, upload_id: number) => Promise<void>;
   onClear: (squad: number, slot: number) => Promise<void>;
+  onOpenHeroDetails: (uploadId: number) => void;
 }) {
   const selectedThisSquad =
     selectedSlot && selectedSlot.squad === squad ? selectedSlot.slot : null;
@@ -205,14 +252,16 @@ function SquadGrid({
             <button
               key={`hero-${squad}-${slot}`}
               type="button"
-              onClick={() => setSelectedSlot({ squad, slot })}
+              onClick={() => {
+                setSelectedSlot({ squad, slot });
+                // If something is already assigned, open hero details immediately.
+                if (uploadId) onOpenHeroDetails(uploadId);
+              }}
               className={cn(
                 "h-14 rounded-2xl border bg-black/20 overflow-hidden relative",
                 isSelected ? "border-fuchsia-300/50" : "border-white/10"
               )}
-              title={`Squad ${squad} slot ${slot}${
-                uploadId ? ` (upload_id=${uploadId})` : ""
-              }`}
+              title={`Squad ${squad} slot ${slot}${uploadId ? ` (upload_id=${uploadId})` : ""}`}
             >
               {img ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -305,6 +354,22 @@ export default function Home() {
   const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // Hero details modal
+  const [heroDetailsOpen, setHeroDetailsOpen] = useState(false);
+  const [heroDetailsBusy, setHeroDetailsBusy] = useState(false);
+  const [heroDetailsErr, setHeroDetailsErr] = useState<string | null>(null);
+  const [heroDetailsUploadId, setHeroDetailsUploadId] = useState<number | null>(null);
+  const [heroDetailsImageUrl, setHeroDetailsImageUrl] = useState<string | null>(null);
+  const [heroDetailsFactsId, setHeroDetailsFactsId] = useState<string | null>(null);
+
+  // Editable hero identity
+  const [heroKey, setHeroKey] = useState<string>("");
+  const [heroLevel, setHeroLevel] = useState<string>("");
+  const [heroStars, setHeroStars] = useState<string>("");
+  const [heroNotes, setHeroNotes] = useState<string>("");
+  const [heroGearJson, setHeroGearJson] = useState<string>("");
+  const [heroSkillsJson, setHeroSkillsJson] = useState<string>("");
+
   // Analyzer output + chat input
   const [battleOut, setBattleOut] = useState<string>("");
   const [battleBusy, setBattleBusy] = useState(false);
@@ -351,9 +416,7 @@ export default function Home() {
     return k;
   }
 
-  async function safeReadResponse(
-    res: Response
-  ): Promise<{ json?: any; text?: string }> {
+  async function safeReadResponse(res: Response): Promise<{ json?: any; text?: string }> {
     const ct = res.headers.get("content-type") || "";
 
     try {
@@ -368,6 +431,105 @@ export default function Home() {
       return { text: t };
     } catch {
       return { text: "" };
+    }
+  }
+
+  async function openHeroDetails(uploadId: number) {
+    setHeroDetailsErr(null);
+    setHeroDetailsBusy(true);
+    setHeroDetailsOpen(true);
+    setHeroDetailsUploadId(uploadId);
+
+    try {
+      const res = await fetch(`/api/hero/details?upload_id=${uploadId}`, {
+        credentials: "include",
+      });
+
+      const payload = (await res.json().catch(() => null)) as HeroDetailsResponse | null;
+
+      if (!res.ok || !payload?.ok) {
+        const msg = payload?.error ?? `HTTP ${res.status}`;
+        setHeroDetailsErr(`Failed to load hero details: ${msg}`);
+        setHeroDetailsImageUrl(null);
+        setHeroDetailsFactsId(null);
+        return;
+      }
+
+      setHeroDetailsImageUrl(payload.image_url ?? null);
+      setHeroDetailsFactsId(payload.upload?.facts_id ?? null);
+
+      const v: HeroFactsValue | null =
+        payload.facts?.value && typeof payload.facts.value === "object"
+          ? (payload.facts.value as HeroFactsValue)
+          : null;
+
+      const prefKey = String(payload.facts?.key ?? v?.hero_key ?? "").trim();
+      setHeroKey(prefKey);
+
+      const lvl = v?.level ?? null;
+      const stars = v?.stars ?? null;
+
+      setHeroLevel(lvl === null || lvl === undefined ? "" : String(lvl));
+      setHeroStars(stars === null || stars === undefined ? "" : String(stars));
+      setHeroNotes(String(v?.notes ?? ""));
+
+      setHeroGearJson(v?.gear ? JSON.stringify(v.gear, null, 2) : "");
+      setHeroSkillsJson(v?.skills ? JSON.stringify(v.skills, null, 2) : "");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setHeroDetailsErr(`Failed to load hero details: ${msg}`);
+    } finally {
+      setHeroDetailsBusy(false);
+    }
+  }
+
+  async function saveHeroDetails() {
+    if (!heroDetailsUploadId) return;
+
+    const hk = heroKey.trim();
+    if (!hk) {
+      setHeroDetailsErr("Hero name/key is required (example: Wukong).");
+      return;
+    }
+
+    setHeroDetailsErr(null);
+    setHeroDetailsBusy(true);
+
+    try {
+      const level = safeNum(heroLevel);
+      const stars = safeNum(heroStars);
+
+      const res = await fetch("/api/hero/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          upload_id: heroDetailsUploadId,
+          hero_key: hk,
+          level,
+          stars,
+          notes: heroNotes.trim() || null,
+          gear: tryParseJson(heroGearJson),
+          skills: tryParseJson(heroSkillsJson),
+        }),
+      });
+
+      const payload = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; facts_id?: string }
+        | null;
+
+      if (!res.ok || !payload?.ok) {
+        const msg = payload?.error ?? `HTTP ${res.status}`;
+        setHeroDetailsErr(`Save failed: ${msg}`);
+        return;
+      }
+
+      setHeroDetailsFactsId(payload.facts_id ?? heroDetailsFactsId ?? null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setHeroDetailsErr(`Save failed: ${msg}`);
+    } finally {
+      setHeroDetailsBusy(false);
     }
   }
 
@@ -386,23 +548,15 @@ export default function Home() {
 
     if (!res.ok) {
       const serverMsg =
-        payload.json?.error ??
-        payload.json?.message ??
-        payload.text?.slice(0, 180) ??
-        "";
+        payload.json?.error ?? payload.json?.message ?? payload.text?.slice(0, 180) ?? "";
       const msgBase =
-        serverMsg && typeof serverMsg === "string"
-          ? serverMsg
-          : "Upload failed.";
+        serverMsg && typeof serverMsg === "string" ? serverMsg : "Upload failed.";
       return { ok: false, message: `${msgBase} (HTTP ${res.status})` };
     }
 
-    const rid =
-      payload.json?.reportId ??
-      payload.json?.id ??
-      payload.json?.uploadId ??
-      null;
+    const rid = payload.json?.reportId ?? payload.json?.id ?? payload.json?.uploadId ?? null;
     return { ok: true, message: rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅" };
+    // (You can later refresh uploads list automatically here if you want.)
   }
 
   async function handleUploadFiles(files: FileList | null) {
@@ -560,12 +714,14 @@ export default function Home() {
         setSquadsMsg((prev) => (prev ? prev + " | " : "") + `Uploads load failed: ${err}`);
         setHeroUploads([]);
       } else {
-        setHeroUploads((uploadsPayload.uploads ?? []).map((u) => ({
-          id: Number(u.id),
-          url: u.url ?? null,
-          created_at: u.created_at,
-          storage_path: u.storage_path,
-        })));
+        setHeroUploads(
+          (uploadsPayload.uploads ?? []).map((u) => ({
+            id: Number(u.id),
+            url: u.url ?? null,
+            created_at: u.created_at,
+            storage_path: u.storage_path,
+          }))
+        );
       }
     } finally {
       setSquadsBusy(false);
@@ -614,8 +770,8 @@ export default function Home() {
             emoji="🧠"
             emptyStateComponent={
               <div className="text-sm text-slate-400/80">
-                Ask about squads, heroes, skills, gear, drone, overlord, and game facts.
-                Use Image Upload to add screenshots.
+                Ask about squads, heroes, skills, gear, drone, overlord, and game facts. Use Image Upload
+                to add screenshots.
               </div>
             }
           />
@@ -639,10 +795,7 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <BottomButton
-                label="Battle Report Analyzer"
-                onClick={() => setBattleOpen(true)}
-              />
+              <BottomButton label="Battle Report Analyzer" onClick={() => setBattleOpen(true)} />
               <BottomButton label="Optimizer" onClick={() => setOptimizerOpen(true)} />
               <BottomButton label="Image Upload" onClick={() => setUploadOpen(true)} />
             </div>
@@ -657,7 +810,7 @@ export default function Home() {
       {/* Squads Modal (WIRED) */}
       <ModalShell
         title="Squads"
-        subtitle="Assign hero images to squad slots (slot → upload_id)."
+        subtitle="Assign hero images to squad slots (slot → upload_id). Tap an assigned slot to open Hero Details."
         open={squadsOpen}
         onClose={() => setSquadsOpen(false)}
       >
@@ -667,7 +820,7 @@ export default function Home() {
               ? "Loading squads + hero uploads…"
               : squadsMsg
               ? squadsMsg
-              : "Click a hero slot, then click a hero image to assign it. Use Clear slot to remove."}
+              : "Click a hero slot, then click a hero image to assign it. Tap an assigned slot to edit hero details. Use Clear slot to remove."}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -679,6 +832,7 @@ export default function Home() {
               setSelectedSlot={setSelectedSlot}
               onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
               onClear={async (sq, sl) => setSlot(sq, sl, null)}
+              onOpenHeroDetails={(id) => void openHeroDetails(id)}
             />
             <SquadGrid
               squad={2}
@@ -688,6 +842,7 @@ export default function Home() {
               setSelectedSlot={setSelectedSlot}
               onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
               onClear={async (sq, sl) => setSlot(sq, sl, null)}
+              onOpenHeroDetails={(id) => void openHeroDetails(id)}
             />
             <SquadGrid
               squad={3}
@@ -697,6 +852,7 @@ export default function Home() {
               setSelectedSlot={setSelectedSlot}
               onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
               onClear={async (sq, sl) => setSlot(sq, sl, null)}
+              onOpenHeroDetails={(id) => void openHeroDetails(id)}
             />
             <SquadGrid
               squad={4}
@@ -706,7 +862,150 @@ export default function Home() {
               setSelectedSlot={setSelectedSlot}
               onAssign={async (sq, sl, id) => setSlot(sq, sl, id)}
               onClear={async (sq, sl) => setSlot(sq, sl, null)}
+              onOpenHeroDetails={(id) => void openHeroDetails(id)}
             />
+          </div>
+        </div>
+      </ModalShell>
+
+      {/* Hero Details Modal */}
+      <ModalShell
+        title="Hero Details"
+        subtitle="Set hero name/key + stats. Saved into facts and linked to this hero upload."
+        open={heroDetailsOpen}
+        onClose={() => setHeroDetailsOpen(false)}
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
+            {heroDetailsBusy
+              ? "Loading…"
+              : heroDetailsErr
+              ? heroDetailsErr
+              : heroDetailsUploadId
+              ? `Upload id: ${heroDetailsUploadId}${heroDetailsFactsId ? ` • facts_id: ${heroDetailsFactsId}` : ""}`
+              : "No hero selected."}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[220px,1fr]">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs uppercase tracking-[0.25em] text-white/50">Image</div>
+
+              <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                {heroDetailsImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={heroDetailsImageUrl} alt="Hero" className="h-[220px] w-full object-cover" />
+                ) : (
+                  <div className="flex h-[220px] w-full items-center justify-center text-sm text-white/40">
+                    No image
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 text-xs text-white/50">
+                Tip: keep the name simple (example: Wukong). Optimizer uses this key.
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Hero name/key</div>
+                  <input
+                    value={heroKey}
+                    onChange={(e) => setHeroKey(e.target.value)}
+                    placeholder="Example: Wukong"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                    disabled={heroDetailsBusy}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Level</div>
+                  <input
+                    value={heroLevel}
+                    onChange={(e) => setHeroLevel(e.target.value)}
+                    placeholder="120"
+                    inputMode="numeric"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                    disabled={heroDetailsBusy}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Stars</div>
+                  <input
+                    value={heroStars}
+                    onChange={(e) => setHeroStars(e.target.value)}
+                    placeholder="6"
+                    inputMode="numeric"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                    disabled={heroDetailsBusy}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/50">Notes</div>
+                <textarea
+                  value={heroNotes}
+                  onChange={(e) => setHeroNotes(e.target.value)}
+                  placeholder="Optional: anything special about this hero build…"
+                  className="mt-2 min-h-[90px] w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                  disabled={heroDetailsBusy}
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Gear (JSON optional)</div>
+                  <textarea
+                    value={heroGearJson}
+                    onChange={(e) => setHeroGearJson(e.target.value)}
+                    placeholder='Example: { "set": "Warrior", "pieces": 6 }'
+                    className="mt-2 min-h-[160px] w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                    disabled={heroDetailsBusy}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Skills (JSON optional)</div>
+                  <textarea
+                    value={heroSkillsJson}
+                    onChange={(e) => setHeroSkillsJson(e.target.value)}
+                    placeholder='Example: { "skill1": 5, "skill2": 3 }'
+                    className="mt-2 min-h-[160px] w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
+                    disabled={heroDetailsBusy}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveHeroDetails()}
+                  disabled={heroDetailsBusy || !heroDetailsUploadId}
+                  className={cn(
+                    "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
+                    "text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-300/40 transition",
+                    (heroDetailsBusy || !heroDetailsUploadId) && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {heroDetailsBusy ? "Saving…" : "Save"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHeroDetailsOpen(false)}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="text-xs text-white/45">
+                Note: if your backend extractor later links facts automatically, this modal will still show those facts (and you can edit).
+              </div>
+            </div>
           </div>
         </div>
       </ModalShell>
@@ -719,9 +1018,8 @@ export default function Home() {
         onClose={() => setDroneOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired to your saved drone extraction data.
-          For now, uploads + future optimizer can read drone rows via{" "}
-          <span className="text-white/85">kind = &quot;drone&quot;</span>.
+          This modal is ready to be wired to your saved drone extraction data. For now, uploads + future optimizer
+          can read drone rows via <span className="text-white/85">kind = &quot;drone&quot;</span>.
         </div>
       </ModalShell>
 
@@ -733,9 +1031,8 @@ export default function Home() {
         onClose={() => setOverlordOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired to your saved overlord extraction data.
-          For now, uploads + future optimizer can read overlord rows via{" "}
-          <span className="text-white/85">kind = &quot;overlord&quot;</span>.
+          This modal is ready to be wired to your saved overlord extraction data. For now, uploads + future optimizer
+          can read overlord rows via <span className="text-white/85">kind = &quot;overlord&quot;</span>.
         </div>
       </ModalShell>
 
@@ -781,9 +1078,7 @@ export default function Home() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs uppercase tracking-[0.25em] text-white/50">
-              Ask the analyzer
-            </div>
+            <div className="text-xs uppercase tracking-[0.25em] text-white/50">Ask the analyzer</div>
             <div className="mt-2 flex gap-2">
               <input
                 value={battleMsg}
@@ -816,9 +1111,8 @@ export default function Home() {
         onClose={() => setOptimizerOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          Optimizer is not wired yet. Next step is to reuse the battle analyzer math core and then pull from:
-          AI facts DB, battle analyzer history, squads, drone, and overlord state.
-          Then it becomes chat-driven like the analyzer.
+          Optimizer is not wired yet. Next step is to reuse the battle analyzer math core and then pull from: AI facts
+          DB, battle analyzer history, squads, drone, and overlord state. Then it becomes chat-driven like the analyzer.
         </div>
       </ModalShell>
 
@@ -888,8 +1182,7 @@ export default function Home() {
             <div className="mt-3 text-sm text-white/70">
               {uploadBusy ? (
                 <span>
-                  Uploading…{" "}
-                  {uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : ""}
+                  Uploading… {uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : ""}
                 </span>
               ) : uploadMsg ? (
                 <span>{uploadMsg}</span>
@@ -931,4 +1224,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-      }
+        }
