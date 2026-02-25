@@ -31,7 +31,6 @@ function safeJsonParse<T>(raw: string): T | null {
   try {
     return JSON.parse(raw) as T;
   } catch {
-    // Try to salvage JSON inside fences / extra text
     const m = raw.match(/\{[\s\S]*\}/);
     if (!m) return null;
     try {
@@ -44,7 +43,7 @@ function safeJsonParse<T>(raw: string): T | null {
 
 type ExtractedHero = {
   hero_name?: string | null;
-  hero_key?: string | null; // optional override
+  hero_key?: string | null;
   level?: number | null;
   stars?: number | null;
   power?: number | null;
@@ -63,9 +62,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing/invalid upload_id" }, { status: 400 });
   }
 
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return NextResponse.json({ ok: false, error: "OPENAI_API_KEY is missing on the server" }, { status: 500 });
+  }
+
   const sb: any = supabaseAdmin();
 
-  // Load upload row
   const up = await sb
     .from("player_uploads")
     .select("id, kind, storage_bucket, storage_path, created_at, facts_id")
@@ -79,14 +82,12 @@ export async function POST(req: Request) {
   const bucket: string = up.data.storage_bucket || "uploads";
   const storage_path: string = up.data.storage_path;
 
-  // Download bytes from storage
   const dl = await sb.storage.from(bucket).download(storage_path);
   if (dl.error) return NextResponse.json({ ok: false, error: dl.error.message }, { status: 500 });
 
   const arrayBuffer = await dl.data.arrayBuffer();
   const buf = Buffer.from(arrayBuffer);
 
-  // Best-effort MIME from path (fallback)
   const lower = String(storage_path).toLowerCase();
   const mime =
     lower.endsWith(".png")
@@ -99,44 +100,31 @@ export async function POST(req: Request) {
 
   const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    return NextResponse.json(
-      { ok: false, error: "OPENAI_API_KEY is missing on the server" },
-      { status: 500 }
-    );
-  }
-
   const client = new OpenAI({ apiKey });
 
-  // Keep cost down:
-  // - use gpt-4o-mini (cheap, supports image input)
-  // - limit tokens
-  // - tell it to be conservative
+  // Cheapest vision option; override via env if you want
   const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
 
   const system = [
     "You extract structured hero profile data from a mobile game screenshot.",
     "Return ONLY valid JSON. No markdown, no commentary.",
     "If a field is not visible, use null.",
-    "Be conservative: do not guess names/values you can't read.",
-    "Skills and gear can be partial; include what is clearly visible.",
+    "Be conservative: do not guess.",
   ].join(" ");
 
   const user = [
     "Extract these fields from the image:",
-    "- hero_name (string|null) : the displayed hero name",
-    "- level (number|null) : hero level",
-    "- stars (number|null) : star count",
-    "- power (number|null) : total power number",
+    "- hero_name (string|null)",
+    "- level (number|null)",
+    "- stars (number|null)",
+    "- power (number|null)",
     "- skills (array) : [{name, level}] if visible",
     "- gear (array) : [{name, tier, level}] if visible",
-    "- notes (string|null) : short note if something important is unclear",
+    "- notes (string|null)",
     "",
     "Return JSON with keys: hero_name, level, stars, power, skills, gear, notes",
   ].join("\n");
 
-  // Use Responses API (works with OpenAI JS SDK v4+)
   const resp = await client.responses.create({
     model,
     input: [
@@ -145,7 +133,8 @@ export async function POST(req: Request) {
         role: "user",
         content: [
           { type: "input_text", text: user },
-          { type: "input_image", image_url: dataUrl },
+          // ✅ FIX: your SDK requires `detail`
+          { type: "input_image", image_url: dataUrl, detail: "low" },
         ],
       },
     ],
@@ -187,7 +176,6 @@ export async function POST(req: Request) {
     },
   };
 
-  // Upsert facts row (domain,key unique)
   const fx = await sb
     .from("facts")
     .upsert(
@@ -210,7 +198,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: fx.error.message }, { status: 500 });
   }
 
-  // Link upload -> facts_id so /api/hero/details works immediately
+  // Link upload -> facts_id so /api/hero/details loads on reopen
   const link = await sb
     .from("player_uploads")
     .update({ facts_id: fx.data.id })
@@ -218,7 +206,6 @@ export async function POST(req: Request) {
     .eq("profile_id", s.profileId);
 
   if (link.error) {
-    // Not fatal for extraction, but helpful to know
     return NextResponse.json({
       ok: true,
       warning: `Extracted + saved facts, but failed to link player_uploads.facts_id: ${link.error.message}`,
@@ -236,4 +223,4 @@ export async function POST(req: Request) {
     hero_key,
     extracted: value,
   });
-    }
+}
