@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
-import OpenAI from "openai";
+
+export const runtime = "nodejs";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
@@ -23,204 +25,161 @@ async function requireSessionFromReq(req: Request): Promise<{ profileId: string 
   }
 }
 
-function normKey(s: string) {
-  return s.trim().toLowerCase();
+function toIntOrNull(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[^\d]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
 }
 
-function safeJsonParse<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    try {
-      return JSON.parse(m[0]) as T;
-    } catch {
-      return null;
-    }
-  }
+function normalizeHeroName(name: unknown): string {
+  const s = String(name ?? "").trim();
+  if (!s) return "";
+  // keep user-facing capitalization nice, but normalize for keys separately
+  return s.slice(0, 1).toUpperCase() + s.slice(1);
 }
-
-type ExtractedHero = {
-  hero_name?: string | null;
-  hero_key?: string | null;
-  level?: number | null;
-  stars?: number | null;
-  power?: number | null;
-  skills?: Array<{ name?: string; level?: number | null }>;
-  gear?: Array<{ name?: string; tier?: string; level?: number | null }>;
-  notes?: string | null;
-};
 
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
   if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const body = (await req.json().catch(() => null)) as { upload_id?: number | string } | null;
-  const upload_id = body?.upload_id === undefined ? NaN : Number(body.upload_id);
-  if (!Number.isFinite(upload_id)) {
+  const body = (await req.json().catch(() => null)) as { upload_id?: number } | null;
+  const uploadId = Number(body?.upload_id);
+  if (!Number.isFinite(uploadId)) {
     return NextResponse.json({ ok: false, error: "Missing/invalid upload_id" }, { status: 400 });
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    return NextResponse.json({ ok: false, error: "OPENAI_API_KEY is missing on the server" }, { status: 500 });
   }
 
   const sb: any = supabaseAdmin();
 
+  // Verify upload belongs to this profile
   const up = await sb
     .from("player_uploads")
-    .select("id, kind, storage_bucket, storage_path, created_at, facts_id")
-    .eq("id", upload_id)
+    .select("id, kind, storage_bucket, storage_path")
+    .eq("id", uploadId)
     .eq("profile_id", s.profileId)
     .maybeSingle();
 
   if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
   if (!up.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
 
-  const bucket: string = up.data.storage_bucket || "uploads";
-  const storage_path: string = up.data.storage_path;
+  const bucket = up.data.storage_bucket || "uploads";
+  const signed = await sb.storage.from(bucket).createSignedUrl(up.data.storage_path, 60 * 60);
+  const imageUrl: string | null = signed?.data?.signedUrl ?? null;
 
-  const dl = await sb.storage.from(bucket).download(storage_path);
-  if (dl.error) return NextResponse.json({ ok: false, error: dl.error.message }, { status: 500 });
+  if (!imageUrl) {
+    return NextResponse.json({ ok: false, error: "Could not create signed URL for image" }, { status: 500 });
+  }
 
-  const arrayBuffer = await dl.data.arrayBuffer();
-  const buf = Buffer.from(arrayBuffer);
-
-  const lower = String(storage_path).toLowerCase();
-  const mime =
-    lower.endsWith(".png")
-      ? "image/png"
-      : lower.endsWith(".webp")
-      ? "image/webp"
-      : lower.endsWith(".gif")
-      ? "image/gif"
-      : "image/jpeg";
-
-  const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
+  }
 
   const client = new OpenAI({ apiKey });
 
-  // Cheapest vision option; override via env if you want
-  const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
-
-  const system = [
-    "You extract structured hero profile data from a mobile game screenshot.",
-    "Return ONLY valid JSON. No markdown, no commentary.",
-    "If a field is not visible, use null.",
-    "Be conservative: do not guess.",
-  ].join(" ");
-
-  const user = [
-    "Extract these fields from the image:",
-    "- hero_name (string|null)",
-    "- level (number|null)",
-    "- stars (number|null)",
-    "- power (number|null)",
-    "- skills (array) : [{name, level}] if visible",
-    "- gear (array) : [{name, tier, level}] if visible",
-    "- notes (string|null)",
+  // Tight prompt: cheap + reliable.
+  const prompt = [
+    "You are extracting a hero profile from a mobile game screenshot.",
+    "Return ONLY valid JSON (no markdown, no commentary).",
+    "Fields:",
+    "- name: string (hero name)",
+    "- level: number (hero level)",
+    "- stars: number (hero star count)",
+    "- power: number|null (if visible; else null)",
     "",
-    "Return JSON with keys: hero_name, level, stars, power, skills, gear, notes",
+    "If a field is not visible, set it to null (except name: if unknown, use empty string).",
   ].join("\n");
 
   const resp = await client.responses.create({
-    model,
+    model: "gpt-4.1-mini",
     input: [
-      { role: "system", content: system },
       {
         role: "user",
         content: [
-          { type: "input_text", text: user },
-          // ✅ FIX: your SDK requires `detail`
-          { type: "input_image", image_url: dataUrl, detail: "low" },
+          { type: "input_text", text: prompt },
+          // ✅ FIX: detail is required by the SDK typing
+          { type: "input_image", image_url: imageUrl, detail: "low" },
         ],
       },
     ],
-    max_output_tokens: 450,
+    // keep it cheap
+    max_output_tokens: 300,
   });
 
-  const rawText = resp.output_text ?? "";
-  const extracted = safeJsonParse<ExtractedHero>(rawText);
+  const raw = resp.output_text?.trim() ?? "";
+  let parsed: any = null;
 
-  if (!extracted) {
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // fallback: try to salvage first JSON object
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch {}
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
     return NextResponse.json(
-      { ok: false, error: "Model did not return valid JSON", raw: rawText.slice(0, 800) },
-      { status: 502 }
+      { ok: false, error: "Model did not return valid JSON", raw: raw.slice(0, 500) },
+      { status: 500 }
     );
   }
 
-  const hero_name = extracted.hero_name ? String(extracted.hero_name).trim() : "";
-  const hero_key = extracted.hero_key
-    ? normKey(String(extracted.hero_key))
-    : hero_name
-    ? normKey(hero_name)
-    : `upload_${upload_id}`;
+  const name = normalizeHeroName(parsed.name);
+  const level = toIntOrNull(parsed.level);
+  const stars = toIntOrNull(parsed.stars);
+  const power = toIntOrNull(parsed.power);
+
+  // Key MUST be stable and MUST avoid collisions across profiles.
+  // Also normalize name for key matching (case-insensitive).
+  const keyName = (name || `upload_${uploadId}`).trim().toLowerCase();
+  const domain = "hero_profile";
+  const key = `${s.profileId}:hero:${keyName}`;
 
   const value = {
-    hero_key,
-    display_name: hero_name || null,
-    level: Number.isFinite(Number(extracted.level)) ? Number(extracted.level) : null,
-    stars: Number.isFinite(Number(extracted.stars)) ? Number(extracted.stars) : null,
-    power: Number.isFinite(Number(extracted.power)) ? Number(extracted.power) : null,
-    skills: Array.isArray(extracted.skills) ? extracted.skills : [],
-    gear: Array.isArray(extracted.gear) ? extracted.gear : [],
-    notes: extracted.notes ?? null,
-    extracted_from: {
-      upload_id,
-      bucket,
-      storage_path,
-      model,
-      at: new Date().toISOString(),
-    },
+    kind: "hero_profile",
+    name: name || null,
+    level,
+    stars,
+    power,
+    source: { upload_id: uploadId },
   };
 
+  // ✅ Upsert into facts so we don't trip the unique constraint on (domain,key).
   const fx = await sb
     .from("facts")
     .upsert(
       {
-        domain: "hero",
-        key: hero_key,
+        domain,
+        key,
         value,
-        status: "active",
-        confidence: 0.85,
-        source_urls: [],
+        status: "confirmed",
+        confidence: 0.8,
+        source_urls: [up.data.storage_path],
         created_by_profile_id: s.profileId,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "domain,key" }
     )
-    .select("id, domain, key")
+    .select("id, domain, key, value, status, confidence, updated_at")
     .single();
 
   if (fx.error) {
     return NextResponse.json({ ok: false, error: fx.error.message }, { status: 500 });
   }
 
-  // Link upload -> facts_id so /api/hero/details loads on reopen
+  // Link upload -> facts
   const link = await sb
     .from("player_uploads")
     .update({ facts_id: fx.data.id })
-    .eq("id", upload_id)
+    .eq("id", uploadId)
     .eq("profile_id", s.profileId);
 
   if (link.error) {
-    return NextResponse.json({
-      ok: true,
-      warning: `Extracted + saved facts, but failed to link player_uploads.facts_id: ${link.error.message}`,
-      upload_id,
-      facts_id: fx.data.id,
-      hero_key,
-      extracted: value,
-    });
+    return NextResponse.json({ ok: false, error: link.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    upload_id,
-    facts_id: fx.data.id,
-    hero_key,
-    extracted: value,
-  });
+  return NextResponse.json({ ok: true, facts: fx.data });
 }
