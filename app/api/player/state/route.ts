@@ -4,10 +4,7 @@ import { sessionCookieName, verifySession } from "@/lib/session";
 
 export const runtime = "nodejs";
 
-function getCookieFromHeader(
-  cookieHeader: string | null,
-  name: string
-): string | undefined {
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
   const parts = cookieHeader.split(";").map((p) => p.trim());
   for (const p of parts) {
@@ -45,9 +42,31 @@ function ensureSquadStateShape(state: any) {
 
 function toUploadIdOrNull(v: unknown): number | null {
   if (v === null || v === undefined) return null;
-  const n = typeof v === "number" ? v : Number(String(v).trim());
-  if (!Number.isFinite(n)) return null;
-  return Math.trunc(n);
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    const n = Number(s);
+    if (!Number.isFinite(n)) return null;
+    return Math.trunc(n);
+  }
+  return null;
+}
+
+function normalizeStateForClient(state: any) {
+  const next = ensureSquadStateShape(state);
+
+  for (const squad of ["1", "2", "3", "4"]) {
+    const slots = next.squads?.[squad]?.slots;
+    if (!slots || typeof slots !== "object") continue;
+
+    for (const slot of ["1", "2", "3", "4", "5"]) {
+      const coerced = toUploadIdOrNull(slots[slot]);
+      slots[slot] = coerced; // always number|null
+    }
+  }
+
+  return next;
 }
 
 export async function GET(req: Request) {
@@ -65,7 +84,7 @@ export async function GET(req: Request) {
   if (q.error) return NextResponse.json({ ok: false, error: q.error.message }, { status: 500 });
 
   const row: PlayerStateRow | null = q.data ?? null;
-  const state = ensureSquadStateShape(row?.state);
+  const state = normalizeStateForClient(row?.state);
   return NextResponse.json({ ok: true, state });
 }
 
@@ -91,7 +110,7 @@ export async function POST(req: Request) {
 
   const sb: any = supabaseAdmin();
 
-  // If setting a hero, ensure that upload exists and belongs to this profile.
+  // If setting a hero, ensure the upload exists and belongs to this profile.
   if (upload_id !== null) {
     const check = await sb
       .from("player_uploads")
@@ -115,11 +134,11 @@ export async function POST(req: Request) {
 
   if (cur.error) return NextResponse.json({ ok: false, error: cur.error.message }, { status: 500 });
 
-  const currentState = ensureSquadStateShape(cur.data?.state);
+  const currentState = normalizeStateForClient(cur.data?.state);
   const sKey = String(squad);
   const slotKey = String(slot);
 
-  currentState.squads[sKey].slots[slotKey] = upload_id; // number | null
+  currentState.squads[sKey].slots[slotKey] = upload_id;
 
   const up = await sb
     .from("player_state")
@@ -136,5 +155,5 @@ export async function POST(req: Request) {
 
   if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, state: up.data.state });
+  return NextResponse.json({ ok: true, state: normalizeStateForClient(up.data.state) });
 }
