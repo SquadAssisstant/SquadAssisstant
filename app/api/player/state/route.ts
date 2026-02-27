@@ -31,7 +31,6 @@ type PlayerStateRow = {
 function ensureSquadStateShape(state: any) {
   const next = typeof state === "object" && state ? { ...state } : {};
   if (!next.squads || typeof next.squads !== "object") next.squads = {};
-
   for (const squad of ["1", "2", "3", "4"]) {
     if (!next.squads[squad] || typeof next.squads[squad] !== "object") next.squads[squad] = {};
     if (!next.squads[squad].slots || typeof next.squads[squad].slots !== "object") next.squads[squad].slots = {};
@@ -39,8 +38,11 @@ function ensureSquadStateShape(state: any) {
   return next;
 }
 
-function isUuid(v: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+function toUploadIdOrNull(v: unknown): number | null {
+  if (v === null) return null;
+  const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
 }
 
 export async function GET(req: Request) {
@@ -48,7 +50,6 @@ export async function GET(req: Request) {
   if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const sb: any = supabaseAdmin();
-
   const q = await sb
     .from("player_state")
     .select("id, profile_id, state, updated_at")
@@ -60,7 +61,6 @@ export async function GET(req: Request) {
 
   const row: PlayerStateRow | null = q.data ?? null;
   const state = ensureSquadStateShape(row?.state);
-
   return NextResponse.json({ ok: true, state });
 }
 
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | { op?: "set_slot"; squad?: number; slot?: number; upload_id?: string | null }
+    | { op?: "set_slot"; squad?: number; slot?: number; upload_id?: unknown }
     | null;
 
   if (!body || body.op !== "set_slot") {
@@ -78,13 +78,10 @@ export async function POST(req: Request) {
 
   const squad = Number(body.squad);
   const slot = Number(body.slot);
-  const upload_id = body.upload_id === null ? null : String(body.upload_id).trim();
+  const upload_id = toUploadIdOrNull(body.upload_id);
 
   if (![1, 2, 3, 4].includes(squad) || ![1, 2, 3, 4, 5].includes(slot)) {
     return NextResponse.json({ ok: false, error: "Invalid squad or slot" }, { status: 400 });
-  }
-  if (upload_id !== null && (!upload_id || !isUuid(upload_id))) {
-    return NextResponse.json({ ok: false, error: "Invalid upload_id (must be uuid or null)" }, { status: 400 });
   }
 
   const sb: any = supabaseAdmin();
@@ -117,7 +114,8 @@ export async function POST(req: Request) {
   const sKey = String(squad);
   const slotKey = String(slot);
 
-  currentState.squads[sKey].slots[slotKey] = upload_id; // uuid | null
+  // Store numeric upload id (or null)
+  currentState.squads[sKey].slots[slotKey] = upload_id;
 
   // Upsert player_state row (create if missing)
   const up = await sb
@@ -134,6 +132,5 @@ export async function POST(req: Request) {
     .single();
 
   if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
-
   return NextResponse.json({ ok: true, state: up.data.state });
 }
