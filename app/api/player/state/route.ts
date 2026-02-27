@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
-function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+export const runtime = "nodejs";
+
+function getCookieFromHeader(
+  cookieHeader: string | null,
+  name: string
+): string | undefined {
   if (!cookieHeader) return undefined;
   const parts = cookieHeader.split(";").map((p) => p.trim());
   for (const p of parts) {
@@ -22,7 +27,7 @@ async function requireSessionFromReq(req: Request) {
 }
 
 type PlayerStateRow = {
-  id: string;
+  id?: string;
   profile_id: string;
   state: any;
   updated_at?: string;
@@ -39,8 +44,8 @@ function ensureSquadStateShape(state: any) {
 }
 
 function toUploadIdOrNull(v: unknown): number | null {
-  if (v === null) return null;
-  const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : Number(String(v).trim());
   if (!Number.isFinite(n)) return null;
   return Math.trunc(n);
 }
@@ -86,7 +91,7 @@ export async function POST(req: Request) {
 
   const sb: any = supabaseAdmin();
 
-  // If setting to an upload_id, make sure it belongs to this profile.
+  // If setting a hero, ensure that upload exists and belongs to this profile.
   if (upload_id !== null) {
     const check = await sb
       .from("player_uploads")
@@ -100,7 +105,7 @@ export async function POST(req: Request) {
     if (!check.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
   }
 
-  // Load current player_state row
+  // Load current state
   const cur = await sb
     .from("player_state")
     .select("id, state")
@@ -114,10 +119,8 @@ export async function POST(req: Request) {
   const sKey = String(squad);
   const slotKey = String(slot);
 
-  // Store numeric upload id (or null)
-  currentState.squads[sKey].slots[slotKey] = upload_id;
+  currentState.squads[sKey].slots[slotKey] = upload_id; // number | null
 
-  // Upsert player_state row (create if missing)
   const up = await sb
     .from("player_state")
     .upsert(
@@ -132,5 +135,6 @@ export async function POST(req: Request) {
     .single();
 
   if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
+
   return NextResponse.json({ ok: true, state: up.data.state });
 }
