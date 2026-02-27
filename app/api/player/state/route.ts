@@ -23,13 +23,6 @@ async function requireSessionFromReq(req: Request) {
   }
 }
 
-type PlayerStateRow = {
-  id?: string;
-  profile_id: string;
-  state: any;
-  updated_at?: string;
-};
-
 function ensureSquadStateShape(state: any) {
   const next = typeof state === "object" && state ? { ...state } : {};
   if (!next.squads || typeof next.squads !== "object") next.squads = {};
@@ -61,11 +54,9 @@ function normalizeStateForClient(state: any) {
     if (!slots || typeof slots !== "object") continue;
 
     for (const slot of ["1", "2", "3", "4", "5"]) {
-      const coerced = toUploadIdOrNull(slots[slot]);
-      slots[slot] = coerced; // always number|null
+      slots[slot] = toUploadIdOrNull(slots[slot]); // always number|null
     }
   }
-
   return next;
 }
 
@@ -76,15 +67,14 @@ export async function GET(req: Request) {
   const sb: any = supabaseAdmin();
   const q = await sb
     .from("player_state")
-    .select("id, profile_id, state, updated_at")
+    .select("state, updated_at, profile_id")
     .eq("profile_id", s.profileId)
     .limit(1)
     .maybeSingle();
 
   if (q.error) return NextResponse.json({ ok: false, error: q.error.message }, { status: 500 });
 
-  const row: PlayerStateRow | null = q.data ?? null;
-  const state = normalizeStateForClient(row?.state);
+  const state = normalizeStateForClient(q.data?.state);
   return NextResponse.json({ ok: true, state });
 }
 
@@ -124,10 +114,10 @@ export async function POST(req: Request) {
     if (!check.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
   }
 
-  // Load current state
+  // Load current state (no id column!)
   const cur = await sb
     .from("player_state")
-    .select("id, state")
+    .select("state, profile_id")
     .eq("profile_id", s.profileId)
     .limit(1)
     .maybeSingle();
@@ -140,6 +130,7 @@ export async function POST(req: Request) {
 
   currentState.squads[sKey].slots[slotKey] = upload_id;
 
+  // Upsert using profile_id as the unique key
   const up = await sb
     .from("player_state")
     .upsert(
