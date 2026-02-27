@@ -3,10 +3,7 @@ import OpenAI from "openai";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
-function getCookieFromHeader(
-  cookieHeader: string | null,
-  name: string
-): string | undefined {
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
   const parts = cookieHeader.split(";").map((p) => p.trim());
   for (const p of parts) {
@@ -15,9 +12,7 @@ function getCookieFromHeader(
   return undefined;
 }
 
-async function requireSessionFromReq(
-  req: Request
-): Promise<{ profileId: string } | null> {
+async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
   const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
   try {
@@ -26,12 +21,6 @@ async function requireSessionFromReq(
   } catch {
     return null;
   }
-}
-
-function isUuid(v: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    v
-  );
 }
 
 function guessMimeFromPath(path: string): string {
@@ -48,32 +37,83 @@ function toDataUrl(mime: string, bytes: Uint8Array) {
   return `data:${mime};base64,${b64}`;
 }
 
-// normalize hero key to avoid Murphy vs murphy duplicates
-function canonHeroKey(name: string) {
-  return name.trim().toLowerCase();
+function normalizeHeroName(name: unknown): string {
+  const s = String(name ?? "").trim();
+  if (!s) return "";
+  return s.slice(0, 1).toUpperCase() + s.slice(1);
+}
+
+function toIntOrNull(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[^\d]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function stableHeroKeyName(name: string, uploadId: number) {
+  // Match /api/hero/save behavior: lowercase key name, but do not change UI
+  const n = (name || `upload_${uploadId}`).trim().toLowerCase();
+  return n;
+}
+
+function pushHistory(existingValue: any, newSnapshot: any) {
+  const prev = existingValue && typeof existingValue === "object" ? existingValue : null;
+  if (!prev) return newSnapshot;
+
+  // If effectively identical, don't spam history
+  const prevCore = JSON.stringify({
+    name: prev.name ?? null,
+    level: prev.level ?? null,
+    stars: prev.stars ?? null,
+    power: prev.power ?? null,
+  });
+  const nextCore = JSON.stringify({
+    name: newSnapshot.name ?? null,
+    level: newSnapshot.level ?? null,
+    stars: newSnapshot.stars ?? null,
+    power: newSnapshot.power ?? null,
+  });
+
+  if (prevCore === nextCore) return { ...prev, ...newSnapshot };
+
+  const history = Array.isArray(prev._history) ? prev._history.slice(0) : [];
+  history.unshift({
+    at: new Date().toISOString(),
+    value: {
+      name: prev.name ?? null,
+      level: prev.level ?? null,
+      stars: prev.stars ?? null,
+      power: prev.power ?? null,
+      source: prev.source ?? null,
+      source_upload_id: prev.source_upload_id ?? null,
+      extracted_at: prev.extracted_at ?? null,
+    },
+  });
+
+  // Keep history bounded so the row doesn't grow forever
+  const bounded = history.slice(0, 50);
+
+  return {
+    ...prev,
+    ...newSnapshot,
+    _history: bounded,
+  };
 }
 
 export async function POST(req: Request) {
   const s = await requireSessionFromReq(req);
-  if (!s) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | { upload_id?: string; hint_name?: string | null }
+    | { upload_id?: number; hint_name?: string | null }
     | null;
 
-  const uploadId = String(body?.upload_id ?? "").trim();
-  if (!uploadId || !isUuid(uploadId)) {
-    return NextResponse.json(
-      { ok: false, error: "Missing/invalid upload_id (uuid required)" },
-      { status: 400 }
-    );
+  const uploadId = Number(body?.upload_id);
+  if (!Number.isFinite(uploadId)) {
+    return NextResponse.json({ ok: false, error: "Missing/invalid upload_id" }, { status: 400 });
   }
 
   const sb: any = supabaseAdmin();
 
-  // Verify upload belongs to profile, and get storage location
   const up = await sb
     .from("player_uploads")
     .select("id, kind, storage_bucket, storage_path, created_at")
@@ -81,14 +121,9 @@ export async function POST(req: Request) {
     .eq("profile_id", s.profileId)
     .maybeSingle();
 
-  if (up.error) {
-    return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
-  }
-  if (!up.data) {
-    return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
-  }
+  if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
+  if (!up.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
 
-  // Optional: require hero_profile kind
   if (up.data.kind !== "hero_profile") {
     return NextResponse.json(
       { ok: false, error: `Upload kind must be hero_profile (got ${up.data.kind})` },
@@ -98,11 +133,8 @@ export async function POST(req: Request) {
 
   const bucket = up.data.storage_bucket || "uploads";
   const path = String(up.data.storage_path || "");
-  if (!path) {
-    return NextResponse.json({ ok: false, error: "Upload missing storage_path" }, { status: 500 });
-  }
+  if (!path) return NextResponse.json({ ok: false, error: "Upload missing storage_path" }, { status: 500 });
 
-  // Download the image bytes via admin storage (no signed url needed)
   const dl = await sb.storage.from(bucket).download(path);
   if (dl.error) {
     return NextResponse.json(
@@ -117,13 +149,10 @@ export async function POST(req: Request) {
   const dataUrl = toDataUrl(mime, bytes);
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
-  }
+  if (!apiKey) return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
 
   const client = new OpenAI({ apiKey });
 
-  // Keep prompt tight: extract name, level, stars, power if visible.
   const hint = (body?.hint_name ?? "").trim();
   const prompt = [
     "You are extracting structured hero info from a mobile game screenshot.",
@@ -132,7 +161,7 @@ export async function POST(req: Request) {
     "Rules:",
     "- name: hero name as displayed",
     "- level: integer",
-    "- stars: integer (e.g. 5)",
+    "- stars: integer",
     "- power: integer if visible",
     "- If a field is not visible, use null.",
     hint ? `User hint: hero might be "${hint}".` : "",
@@ -147,8 +176,7 @@ export async function POST(req: Request) {
         role: "user",
         content: [
           { type: "input_text", text: prompt },
-
-          // ✅ FIX: image_url must be a string; detail is a top-level field.
+          // IMPORTANT for build correctness: image_url is a string, detail is top-level
           { type: "input_image", image_url: dataUrl, detail: "low" },
         ],
       },
@@ -156,44 +184,52 @@ export async function POST(req: Request) {
   });
 
   const text = resp.output_text?.trim() ?? "";
-
-  let extracted:
-    | { name: string | null; level: number | null; stars: number | null; power: number | null }
-    | null = null;
+  let extracted: { name: string | null; level: number | null; stars: number | null; power: number | null } | null = null;
 
   try {
     extracted = JSON.parse(text);
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Model did not return valid JSON", raw: text.slice(0, 800) },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Model did not return valid JSON", raw: text.slice(0, 800) }, { status: 500 });
   }
 
-  const name = extracted?.name ? String(extracted.name).trim() : "";
-  const level = typeof extracted?.level === "number" ? extracted.level : null;
-  const stars = typeof extracted?.stars === "number" ? extracted.stars : null;
-  const power = typeof extracted?.power === "number" ? extracted.power : null;
+  const name = normalizeHeroName(extracted?.name);
+  const level = toIntOrNull(extracted?.level);
+  const stars = toIntOrNull(extracted?.stars);
+  const power = toIntOrNull(extracted?.power);
 
   if (!name) {
-    return NextResponse.json(
-      { ok: false, error: "Could not read hero name from image", extracted },
-      { status: 422 }
-    );
+    return NextResponse.json({ ok: false, error: "Could not read hero name from image", extracted }, { status: 422 });
   }
 
-  // Save to facts with UPSERT to avoid duplicate constraint
+  // IMPORTANT: match /api/hero/save identity
+  const keyName = stableHeroKeyName(name, uploadId);
   const domain = "hero_profile";
-  const key = `hero:${canonHeroKey(name)}`; // canonical key avoids Murphy vs murphy duplicates
+  const key = `${s.profileId}:hero:${keyName}`;
 
-  const value = {
-    name,
+  // Pull existing row to preserve history (no new tables)
+  const existing = await sb
+    .from("facts")
+    .select("id, value")
+    .eq("domain", domain)
+    .eq("key", key)
+    .maybeSingle();
+
+  if (existing.error) {
+    return NextResponse.json({ ok: false, error: existing.error.message }, { status: 500 });
+  }
+
+  const newSnapshot = {
+    kind: "hero_profile",
+    name: name || null,
     level,
     stars,
     power,
     source_upload_id: uploadId,
     extracted_at: new Date().toISOString(),
+    source: { upload_id: uploadId, manual: false },
   };
+
+  const mergedValue = pushHistory(existing.data?.value, newSnapshot);
 
   const fx = await sb
     .from("facts")
@@ -201,24 +237,32 @@ export async function POST(req: Request) {
       {
         domain,
         key,
-        value,
+        value: mergedValue,
         status: "active",
         confidence: 0.85,
-        source_urls: [],
+        source_urls: [path],
         created_by_profile_id: s.profileId,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "domain,key" }
     )
-    .select("id, domain, key, value, updated_at")
+    .select("id")
     .single();
 
   if (fx.error) {
-    return NextResponse.json(
-      { ok: false, error: `Facts upsert failed: ${fx.error.message}` },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: `Facts upsert failed: ${fx.error.message}` }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, extracted: value, fact: fx.data });
-}
+  // CRITICAL: link upload -> facts_id so hero modal loads the extracted fact deterministically
+  const link = await sb
+    .from("player_uploads")
+    .update({ facts_id: fx.data.id })
+    .eq("id", uploadId)
+    .eq("profile_id", s.profileId);
+
+  if (link.error) {
+    return NextResponse.json({ ok: false, error: link.error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+        }
