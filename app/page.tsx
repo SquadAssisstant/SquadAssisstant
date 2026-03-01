@@ -63,8 +63,6 @@ type PlayerStateResponse = {
 };
 
 function normalizeSlotsFromState(state: any) {
-  // keys are likely like squads.s1.slot1 etc; keep whatever your project already expects.
-  // This function existed in your file; preserved behavior.
   const slots: Record<string, number | null> = {};
   const squads = state?.squads ?? {};
   for (const squadKey of Object.keys(squads)) {
@@ -79,7 +77,6 @@ function normalizeSlotsFromState(state: any) {
 }
 
 function mapToBackendKind(kind: UploadUIKind) {
-  // keep as-is: this is how the server expects it
   return kind;
 }
 
@@ -214,12 +211,10 @@ export default function Home() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [heroDetailsOpen, setHeroDetailsOpen] = useState(false);
 
-  // Analyzer output + chat input
   const [battleOut, setBattleOut] = useState<string>("");
   const [battleBusy, setBattleBusy] = useState(false);
   const [battleMsg, setBattleMsg] = useState<string>("");
 
-  // Upload state
   const [uploadKind, setUploadKind] = useState<UploadUIKind>("battle_report");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
@@ -228,14 +223,12 @@ export default function Home() {
     null
   );
 
-  // Squads wiring
   const [squadsBusy, setSquadsBusy] = useState(false);
   const [squadsMsg, setSquadsMsg] = useState<string | null>(null);
   const [heroUploads, setHeroUploads] = useState<HeroUpload[]>([]);
   const [slots, setSlots] = useState<Record<string, number | null>>({});
   const [selectedSlot, setSelectedSlot] = useState<{ squad: number; slot: number } | null>(null);
 
-  // Hero details wiring
   const [heroDetailsUploadId, setHeroDetailsUploadId] = useState<number | null>(null);
   const [heroDetailsBusy, setHeroDetailsBusy] = useState(false);
   const [heroExtractBusy, setHeroExtractBusy] = useState(false);
@@ -244,13 +237,11 @@ export default function Home() {
   const [heroDetailsImg, setHeroDetailsImg] = useState<string | null>(null);
   const [heroDetailsFacts, setHeroDetailsFacts] = useState<any | null>(null);
 
-  // Editable hero fields (manual override)
   const [heroName, setHeroName] = useState("");
   const [heroLevel, setHeroLevel] = useState("");
   const [heroStars, setHeroStars] = useState("");
   const [heroPower, setHeroPower] = useState("");
 
-  // Drone details wiring
   const [droneUploads, setDroneUploads] = useState<HeroUpload[]>([]);
   const [droneUploadId, setDroneUploadId] = useState<number | null>(null);
   const [droneBusy, setDroneBusy] = useState(false);
@@ -706,7 +697,8 @@ export default function Home() {
         <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-xs uppercase tracking-[0.35em] text-white/50">Main Chat</div>
           <div className="mt-3">
-            <ChatWindow />
+            {/* FIX: ChatWindow requires endpoint */}
+            <ChatWindow endpoint="/api/chat" />
           </div>
         </div>
       </div>
@@ -805,13 +797,15 @@ export default function Home() {
         </div>
       </ModalShell>
 
-      {/* Hero Details Modal (NOW WITH EXTRACT) */}
+      {/* Hero Details Modal */}
       <ModalShell
         title="Hero Profile"
         subtitle={heroDetailsUploadId ? `Upload ID: ${heroDetailsUploadId}` : "Hero details"}
         open={heroDetailsOpen}
         onClose={() => setHeroDetailsOpen(false)}
       >
+        {/* Hero modal content unchanged from previous version */}
+        {/* (kept as-is to avoid regressions) */}
         <div className="space-y-4">
           {heroDetailsErr ? (
             <div className="rounded-2xl border border-rose-400/30 bg-rose-950/20 p-3 text-sm text-rose-100/80">
@@ -1078,8 +1072,7 @@ export default function Home() {
         onClose={() => setOverlordOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired to your saved overlord extraction data. For now, uploads + future optimizer can read overlord rows via{" "}
-          <span className="text-white/85">kind = &quot;overlord&quot;</span>.
+          This modal is ready to be wired later. For now it remains a placeholder to avoid regressions.
         </div>
       </ModalShell>
 
@@ -1132,11 +1125,11 @@ export default function Home() {
       </ModalShell>
 
       {/* Optimizer Modal */}
-      <ModalShell title="Optimizer" subtitle="Coming after analyzer + drone + squads" open={optimizerOpen} onClose={() => setOptimizerOpen(false)}>
+      <ModalShell title="Optimizer" subtitle="Fine-tune after drone + analyzer" open={optimizerOpen} onClose={() => setOptimizerOpen(false)}>
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           Optimizer will pull from Battle Report Analyzer, Squads, Heroes, and Drone. We’ll fine-tune last.
         </div>
       </ModalShell>
     </div>
   );
-      }
+        }
