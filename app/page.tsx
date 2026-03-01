@@ -24,28 +24,84 @@ function ModalShell({
   children: React.ReactNode;
 }) {
   if (!open) return null;
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-      <div className="w-full max-w-5xl rounded-3xl border border-white/10 bg-gradient-to-b from-[#0b1020] to-[#050814] shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/60 p-3 sm:items-center">
+      <div className="w-full max-w-5xl rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
           <div>
-            <div className="text-sm uppercase tracking-[0.35em] text-white/60">{title}</div>
-            {subtitle ? <div className="mt-1 text-xs text-white/55">{subtitle}</div> : null}
+            <div className="text-xs uppercase tracking-[0.35em] text-white/50">
+              {title.toUpperCase()}
+            </div>
+            {subtitle ? (
+              <div className="mt-2 text-sm leading-relaxed text-white/70">
+                {subtitle}
+              </div>
+            ) : null}
           </div>
+
           <button
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.25em] text-white/70 hover:bg-white/10"
+            type="button"
             onClick={onClose}
+            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            aria-label="Close modal"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-5">{children}</div>
+
+        <div className="flex justify-end border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/80 hover:bg-white/10"
           >
             Close
           </button>
         </div>
-        <div className="max-h-[78vh] overflow-y-auto px-5 py-5">{children}</div>
       </div>
     </div>
   );
 }
 
-type UploadUIKind = "battle_report" | "hero_profile" | "hero_skills" | "gear" | "drone" | "overlord";
+function BottomButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "shrink-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3",
+        "text-[11px] uppercase tracking-[0.25em] text-white",
+        "hover:bg-white/15 active:scale-[0.99] transition"
+      )}
+      style={{ minWidth: 140 }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Backend allowed kinds (current):
+ * battle_report | hero_profile | drone | overlord | gear | unknown
+ * We map hero_skills to hero_profile for now.
+ */
+type UploadUIKind =
+  | "battle_report"
+  | "hero_profile"
+  | "hero_skills"
+  | "gear"
+  | "drone"
+  | "overlord";
 
 type UploadResult = { fileName: string; ok: boolean; message: string };
 
@@ -62,39 +118,17 @@ type PlayerStateResponse = {
   error?: string;
 };
 
-function normalizeSlotsFromState(state: any) {
-  const slots: Record<string, number | null> = {};
+function normalizeSlotsFromState(state: any): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
   const squads = state?.squads ?? {};
-  for (const squadKey of Object.keys(squads)) {
-    const squad = squads[squadKey] ?? {};
-    for (const slotKey of Object.keys(squad)) {
-      const v = squad[slotKey];
-      const norm = v === null || v === undefined ? null : Number(v);
-      slots[`${squadKey}-${slotKey}`] = Number.isFinite(norm as any) ? (norm as any) : null;
+  for (const s of ["1", "2", "3", "4"]) {
+    const slots = squads?.[s]?.slots ?? {};
+    for (const k of ["1", "2", "3", "4", "5"]) {
+      const v = slots?.[k];
+      out[`${s}-${k}`] = typeof v === "number" && Number.isFinite(v) ? v : null;
     }
   }
-  return slots;
-}
-
-function mapToBackendKind(kind: UploadUIKind) {
-  return kind;
-}
-
-function BottomButton({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void | Promise<void>;
-}) {
-  return (
-    <button
-      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs uppercase tracking-[0.25em] text-white/75 hover:bg-white/10"
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
+  return out;
 }
 
 function SquadGrid({
@@ -112,91 +146,166 @@ function SquadGrid({
   heroUploads: HeroUpload[];
   selectedSlot: { squad: number; slot: number } | null;
   setSelectedSlot: (v: { squad: number; slot: number } | null) => void;
-  onAssign: (squad: SquadSlot, slot: HeroSlotIndex, uploadId: number) => Promise<void>;
-  onClear: (squad: SquadSlot, slot: HeroSlotIndex) => Promise<void>;
-  onOpenHeroDetails: (uploadId: number) => Promise<void>;
+  onAssign: (squad: number, slot: number, upload_id: number) => Promise<void>;
+  onClear: (squad: number, slot: number) => Promise<void>;
+  onOpenHeroDetails: (upload_id: number) => Promise<void>;
 }) {
-  const selectedThisSquad = selectedSlot?.squad === squad ? (selectedSlot.slot as HeroSlotIndex) : null;
+  const selectedThisSquad =
+    selectedSlot && selectedSlot.squad === squad ? selectedSlot.slot : null;
+
+  const uploadById = useMemo(() => {
+    const m = new Map<number, HeroUpload>();
+    for (const u of heroUploads) m.set(u.id, u);
+    return m;
+  }, [heroUploads]);
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.25em] text-white/45">Squad {squad}</div>
-          <div className="mt-1 text-sm text-white/70">Tap a slot, then tap a hero below.</div>
+          <div className="text-lg font-semibold text-white/90">{`Squad ${squad}`}</div>
+          <div className="mt-1 text-sm text-white/60">5 hero slots</div>
         </div>
+
         <button
-          className={cn(
-            "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-[0.25em] text-white/70 hover:bg-white/10",
-            (!selectedThisSquad || !slots[`${squad}-${selectedThisSquad}`]) &&
-              "opacity-50 cursor-not-allowed"
-          )}
-          disabled={!selectedThisSquad || !slots[`${squad}-${selectedThisSquad}`]}
-          onClick={() => {
-            const id = slots[`${squad}-${selectedThisSquad}`];
-            if (id) void onOpenHeroDetails(id);
+          type="button"
+          onClick={async () => {
+            if (!selectedSlot || selectedSlot.squad !== squad) return;
+            await onClear(selectedSlot.squad, selectedSlot.slot);
           }}
-          title="Open details for the hero assigned to the selected slot"
+          disabled={!selectedThisSquad}
+          className={cn(
+            "rounded-2xl border border-white/10 bg-white/5 px-3 py-2",
+            "text-[10px] uppercase tracking-[0.25em] text-white/70 hover:bg-white/10",
+            !selectedThisSquad && "opacity-50 cursor-not-allowed"
+          )}
+          title="Clear selected slot"
         >
-          Open Hero Details
+          Clear slot
         </button>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-5">
-        {[1, 2, 3, 4, 5].map((sl) => {
-          const slot = sl as HeroSlotIndex;
+      <div className="mt-4 text-xs uppercase tracking-[0.25em] text-white/40">
+        Hero slots (click a slot, then pick a hero below)
+      </div>
+
+      <div className="mt-2 grid grid-cols-5 gap-2">
+        {Array.from({ length: 5 }).map((_, idx) => {
+          const slot = (idx + 1) as HeroSlotIndex;
           const key = `${squad}-${slot}`;
-          const val = slots[key] ?? null;
-          const isSelected = selectedSlot?.squad === squad && selectedSlot?.slot === slot;
+          const uploadId = slots[key];
+          const u = uploadId ? uploadById.get(uploadId) : undefined;
+          const img = u?.url ?? null;
+
+          const isSelected =
+            selectedSlot?.squad === squad && selectedSlot?.slot === slot;
+
           return (
             <button
-              key={key}
-              className={cn(
-                "rounded-2xl border px-3 py-3 text-left",
-                isSelected
-                  ? "border-cyan-300/50 bg-cyan-500/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10"
-              )}
+              key={`hero-${squad}-${slot}`}
+              type="button"
               onClick={() => setSelectedSlot({ squad, slot })}
+              className={cn(
+                "h-14 rounded-2xl border bg-black/20 overflow-hidden relative",
+                isSelected ? "border-fuchsia-300/50" : "border-white/10"
+              )}
+              title={`Squad ${squad} slot ${slot}${uploadId ? ` (upload_id=${uploadId})` : ""}`}
             >
-              <div className="text-[10px] uppercase tracking-[0.25em] text-white/45">Slot {slot}</div>
-              <div className="mt-1 text-xs text-white/75">{val ? `Upload #${val}` : "Empty"}</div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.25em] text-white/70 hover:bg-white/10",
-                    !val && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void onClear(squad, slot);
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
+              {img ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={img}
+                  alt={`Squad ${squad} slot ${slot}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-white/35">
+                  {slot}
+                </div>
+              )}
+
+              {uploadId ? (
+                <div className="absolute bottom-1 right-1 rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10px] text-white/70">
+                  {uploadId}
+                </div>
+              ) : null}
             </button>
           );
         })}
       </div>
 
-      <div className="mt-4">
-        <div className="text-[10px] uppercase tracking-[0.25em] text-white/45">Hero uploads</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {heroUploads.map((u) => (
+      <div className="mt-5 text-xs uppercase tracking-[0.25em] text-white/40">
+        Hero library (from uploads) — tap a hero to assign to selected slot
+      </div>
+
+      <div className="mt-2 grid grid-cols-6 gap-2">
+        {heroUploads.length === 0 ? (
+          <div className="col-span-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/60">
+            No hero uploads found yet. Upload hero profile screenshots in{" "}
+            <span className="text-white/80">Image Upload</span> using category{" "}
+            <span className="text-white/80">Hero profile</span>.
+          </div>
+        ) : (
+          heroUploads.slice(0, 30).map((u) => (
             <button
               key={u.id}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/75 hover:bg-white/10"
-              onClick={() => {
-                if (!selectedSlot || selectedSlot.squad !== squad) return;
-                void onAssign(squad, selectedSlot.slot as HeroSlotIndex, u.id);
+              type="button"
+              onClick={async () => {
+                if (!selectedSlot) return;
+                await onAssign(selectedSlot.squad, selectedSlot.slot, u.id);
               }}
-              title={u.storage_path ?? ""}
+              disabled={!selectedSlot}
+              className={cn(
+                "h-14 rounded-2xl border border-white/10 bg-black/20 overflow-hidden hover:border-white/20 transition relative",
+                !selectedSlot && "opacity-50 cursor-not-allowed"
+              )}
+              title={`Assign upload_id=${u.id}`}
             >
-              #{u.id}
+              {u.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={u.url} alt={`Hero upload ${u.id}`} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-white/35">
+                  {u.id}
+                </div>
+              )}
+              <div className="absolute bottom-1 left-1 rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10px] text-white/70">
+                {u.id}
+              </div>
             </button>
-          ))}
+          ))
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-white/55">
+        <div>
+          Selected slot:{" "}
+          <span className="text-white/80">
+            {selectedThisSquad ? `slot ${selectedThisSquad}` : "none"}
+          </span>
+          <span className="ml-2 text-white/40">(Pick a slot, then pick a hero.)</span>
         </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (!selectedSlot || selectedSlot.squad !== squad) return;
+            const key = `${squad}-${selectedSlot.slot}`;
+            const uploadId = slots[key];
+            if (!uploadId) return;
+            await onOpenHeroDetails(uploadId);
+          }}
+          disabled={!selectedThisSquad || !slots[`${squad}-${selectedThisSquad}`]}
+          className={cn(
+            "rounded-2xl border border-white/10 bg-white/5 px-3 py-2",
+            "text-[10px] uppercase tracking-[0.25em] text-white/70 hover:bg-white/10",
+            (!selectedThisSquad || !slots[`${squad}-${selectedThisSquad}`]) &&
+              "opacity-50 cursor-not-allowed"
+          )}
+          title="Open details for the hero assigned to the selected slot"
+        >
+          Open Hero Details
+        </button>
       </div>
     </div>
   );
@@ -211,10 +320,12 @@ export default function Home() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [heroDetailsOpen, setHeroDetailsOpen] = useState(false);
 
+  // Analyzer output + chat input
   const [battleOut, setBattleOut] = useState<string>("");
   const [battleBusy, setBattleBusy] = useState(false);
   const [battleMsg, setBattleMsg] = useState<string>("");
 
+  // Upload state
   const [uploadKind, setUploadKind] = useState<UploadUIKind>("battle_report");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
@@ -223,12 +334,14 @@ export default function Home() {
     null
   );
 
+  // Squads wiring
   const [squadsBusy, setSquadsBusy] = useState(false);
   const [squadsMsg, setSquadsMsg] = useState<string | null>(null);
   const [heroUploads, setHeroUploads] = useState<HeroUpload[]>([]);
   const [slots, setSlots] = useState<Record<string, number | null>>({});
   const [selectedSlot, setSelectedSlot] = useState<{ squad: number; slot: number } | null>(null);
 
+  // Hero details wiring
   const [heroDetailsUploadId, setHeroDetailsUploadId] = useState<number | null>(null);
   const [heroDetailsBusy, setHeroDetailsBusy] = useState(false);
   const [heroExtractBusy, setHeroExtractBusy] = useState(false);
@@ -237,20 +350,11 @@ export default function Home() {
   const [heroDetailsImg, setHeroDetailsImg] = useState<string | null>(null);
   const [heroDetailsFacts, setHeroDetailsFacts] = useState<any | null>(null);
 
+  // Editable hero fields (manual override)
   const [heroName, setHeroName] = useState("");
   const [heroLevel, setHeroLevel] = useState("");
   const [heroStars, setHeroStars] = useState("");
   const [heroPower, setHeroPower] = useState("");
-
-  const [droneUploads, setDroneUploads] = useState<HeroUpload[]>([]);
-  const [droneUploadId, setDroneUploadId] = useState<number | null>(null);
-  const [droneBusy, setDroneBusy] = useState(false);
-  const [droneExtractBusy, setDroneExtractBusy] = useState(false);
-  const [droneSaveBusy, setDroneSaveBusy] = useState(false);
-  const [droneMsg, setDroneMsg] = useState<string | null>(null);
-  const [droneImg, setDroneImg] = useState<string | null>(null);
-  const [droneFacts, setDroneFacts] = useState<any | null>(null);
-  const [droneExtracted, setDroneExtracted] = useState<any | null>(null);
 
   const kindLabel = useMemo(() => {
     switch (uploadKind) {
@@ -267,23 +371,35 @@ export default function Home() {
       case "overlord":
         return "Overlord";
       default:
-        return uploadKind;
+        return "Upload";
     }
   }, [uploadKind]);
 
-  async function safeReadResponse(res: Response) {
-    const text = await res.text().catch(() => "");
+  function mapToBackendKind(k: UploadUIKind) {
+    if (k === "hero_skills") return "hero_profile";
+    return k;
+  }
+
+  async function safeReadResponse(res: Response): Promise<{ json?: any; text?: string }> {
+    const ct = res.headers.get("content-type") || "";
     try {
-      return JSON.parse(text);
+      if (ct.includes("application/json")) return { json: await res.json() };
+    } catch {}
+    try {
+      const t = await res.text();
+      if (t?.startsWith("<!DOCTYPE html")) {
+        return { text: "HTML response received (likely 404 route missing or wrong path)." };
+      }
+      return { text: t };
     } catch {
-      return text ? { raw: text } : null;
+      return { text: "" };
     }
   }
 
-  async function uploadSingle(file: File) {
+  async function uploadSingle(file: File, uiKind: UploadUIKind) {
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("kind", mapToBackendKind(uploadKind));
+    fd.append("kind", mapToBackendKind(uiKind));
 
     const res = await fetch("/api/uploads/image", {
       method: "POST",
@@ -292,82 +408,127 @@ export default function Home() {
     });
 
     const payload = await safeReadResponse(res);
+
     if (!res.ok) {
-      return { ok: false, message: (payload as any)?.error ?? `HTTP ${res.status}` };
+      const serverMsg = payload.json?.error ?? payload.json?.message ?? payload.text?.slice(0, 180) ?? "";
+      const msgBase = serverMsg && typeof serverMsg === "string" ? serverMsg : "Upload failed.";
+      return { ok: false, message: `${msgBase} (HTTP ${res.status})` };
     }
-    return { ok: true, message: "Uploaded" };
+
+    const rid = payload.json?.reportId ?? payload.json?.id ?? payload.json?.uploadId ?? null;
+    return { ok: true, message: rid ? `Uploaded ✅ id=${rid}` : "Uploaded ✅" };
   }
 
   async function handleUploadFiles(files: FileList | null) {
-    if (!files || !files.length) return;
-    setUploadBusy(true);
     setUploadMsg(null);
     setUploadResults([]);
-    setUploadProgress({ current: 0, total: files.length });
+    setUploadProgress(null);
+
+    if (!files || files.length === 0) return;
+
+    const arr = Array.from(files);
+
+    if (arr.length > 20) {
+      setUploadMsg("Please select 20 images or fewer.");
+      return;
+    }
+
+    const nonImages = arr.filter((f) => !f.type.startsWith("image/"));
+    if (nonImages.length > 0) {
+      setUploadMsg("Only image files are supported.");
+      return;
+    }
+
+    setUploadBusy(true);
 
     try {
+      setUploadProgress({ current: 0, total: arr.length });
+
       const results: UploadResult[] = [];
-      for (let i = 0; i < files.length; i++) {
-        setUploadProgress({ current: i + 1, total: files.length });
-        const file = files[i];
-        const r = await uploadSingle(file);
+
+      for (let i = 0; i < arr.length; i++) {
+        setUploadProgress({ current: i + 1, total: arr.length });
+
+        const file = arr[i];
+        const r = await uploadSingle(file, uploadKind);
+
         results.push({ fileName: file.name, ok: r.ok, message: r.message });
+        setUploadResults([...results]);
       }
-      setUploadResults(results);
-      setUploadMsg("Done ✅");
+
+      const okCount = results.filter((r) => r.ok).length;
+      const failCount = results.length - okCount;
+
+      setUploadMsg(
+        failCount === 0
+          ? `Done ✅ Uploaded ${okCount}/${results.length} (${kindLabel}).`
+          : `Done ⚠️ Uploaded ${okCount}/${results.length} (${kindLabel}). Failed: ${failCount}.`
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setUploadMsg(`Upload failed: ${msg}`);
     } finally {
       setUploadBusy(false);
+      setUploadProgress(null);
     }
   }
 
   async function runBattleSummary() {
     setBattleBusy(true);
-    setBattleMsg("");
-    setBattleOut("");
-
     try {
-      const res = await fetch("/api/battle/summary", { credentials: "include" });
-      const payload = (await res.json().catch(() => null)) as { ok?: boolean; summary?: string; error?: string } | null;
+      const res = await fetch("/api/battle/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ limit: 200 }),
+      });
 
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setBattleOut(`Summary failed: ${err}`);
+      const payload = await safeReadResponse(res);
+
+      if (!res.ok) {
+        const msg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setBattleOut(`Error: ${String(msg)}`);
         return;
       }
 
-      setBattleOut(payload.summary ?? "");
+      const summary = String(payload.json?.summary ?? "");
+      setBattleOut(summary || "No summary returned.");
     } catch (e: unknown) {
-      const msg2 = e instanceof Error ? e.message : "unknown";
-      setBattleOut((prev) => `${prev}\n\n---\n\nError: ${msg2}`);
+      const msg = e instanceof Error ? e.message : "unknown";
+      setBattleOut(`Error: ${msg}`);
     } finally {
       setBattleBusy(false);
     }
   }
 
   async function askBattleAnalyzer() {
-    if (!battleMsg.trim()) return;
-    setBattleBusy(true);
+    const msg = battleMsg.trim();
+    if (!msg) return;
 
+    setBattleBusy(true);
     try {
-      const res = await fetch("/api/battle/ask", {
+      const res = await fetch("/api/battle/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ question: battleMsg.trim() }),
+        body: JSON.stringify({ limit: 200, message: msg }),
       });
 
-      const payload = (await res.json().catch(() => null)) as { ok?: boolean; answer?: string; error?: string } | null;
+      const payload = await safeReadResponse(res);
 
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setBattleOut((prev) => `${prev}\n\n---\n\nAsk failed: ${err}`);
+      if (!res.ok) {
+        const m = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setBattleOut((prev) => `${prev}\n\n---\n\nError: ${String(m)}`);
         return;
       }
 
-      const answer = payload.answer ?? "";
+      const summary = String(payload.json?.summary ?? "");
+      const answer = String(payload.json?.answer ?? "");
+
       setBattleOut((prev) => {
-        const parts = [prev].filter(Boolean);
-        if (battleMsg.trim()) parts.push("Question:\n" + battleMsg.trim());
+        const parts: string[] = [];
+        if (prev.trim()) parts.push(prev.trim());
+        if (summary.trim()) parts.push("Summary:\n" + summary.trim());
         if (answer.trim()) parts.push("Answer:\n" + answer.trim());
         return parts.join("\n\n---\n\n");
       });
@@ -405,40 +566,41 @@ export default function Home() {
 
       if (!uploadsRes.ok || !uploadsPayload?.ok) {
         const err = uploadsPayload?.error ?? `HTTP ${uploadsRes.status}`;
-        setSquadsMsg((prev) => prev ?? `Uploads load failed: ${err}`);
+        setSquadsMsg((prev) => (prev ? prev + " | " : "") + `Uploads load failed: ${err}`);
         setHeroUploads([]);
       } else {
-        setHeroUploads(uploadsPayload.uploads ?? []);
+        setHeroUploads(
+          (uploadsPayload.uploads ?? []).map((u) => ({
+            id: Number(u.id),
+            url: u.url ?? null,
+            created_at: u.created_at,
+            storage_path: u.storage_path,
+          }))
+        );
       }
     } finally {
       setSquadsBusy(false);
     }
   }
 
-  async function setSlot(squad: SquadSlot, slot: HeroSlotIndex, uploadId: number | null) {
-    setSquadsBusy(true);
-    setSquadsMsg(null);
-    try {
-      const res = await fetch("/api/player/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ op: "set_slot", squad, slot, upload_id: uploadId }),
-      });
+  async function setSlot(squad: number, slot: number, upload_id: number | null) {
+    const res = await fetch("/api/player/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ op: "set_slot", squad, slot, upload_id }),
+    });
 
-      const json = (await res.json().catch(() => null)) as PlayerStateResponse | null;
+    const json = (await res.json().catch(() => null)) as PlayerStateResponse | null;
 
-      if (!res.ok || !json?.ok) {
-        const err = json?.error ?? `HTTP ${res.status}`;
-        setSquadsMsg(`Save failed: ${err}`);
-        return;
-      }
-
-      setSlots(normalizeSlotsFromState(json.state ?? {}));
-      setSquadsMsg("Saved ✅");
-    } finally {
-      setSquadsBusy(false);
+    if (!res.ok || !json?.ok) {
+      const err = json?.error ?? `HTTP ${res.status}`;
+      setSquadsMsg(`Save failed: ${err}`);
+      return;
     }
+
+    setSlots(normalizeSlotsFromState(json.state ?? {}));
+    setSquadsMsg("Saved ✅");
   }
 
   async function openHeroDetails(upload_id: number) {
@@ -452,33 +614,45 @@ export default function Home() {
     try {
       const res = await fetch(`/api/hero/details?upload_id=${upload_id}`, { credentials: "include" });
       const payload = (await res.json().catch(() => null)) as
-        | { ok?: boolean; image_url?: string | null; facts?: any | null; error?: string }
+        | { ok?: boolean; error?: string; image_url?: string | null; facts?: any | null }
         | null;
 
       if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setHeroDetailsErr(`Load failed: ${err}`);
+        const msg = payload?.error ?? `HTTP ${res.status}`;
+        setHeroDetailsErr(msg);
         return;
       }
 
       setHeroDetailsImg(payload.image_url ?? null);
       setHeroDetailsFacts(payload.facts ?? null);
 
+      // Pre-fill fields from existing facts (if any)
       const v = payload.facts?.value ?? null;
-      setHeroName(v?.name ?? "");
-      setHeroLevel(String(v?.level ?? ""));
-      setHeroStars(String(v?.stars ?? ""));
-      setHeroPower(String(v?.power ?? ""));
+      if (v && typeof v === "object") {
+        setHeroName(typeof v.name === "string" ? v.name : "");
+        setHeroLevel(v.level != null ? String(v.level) : "");
+        setHeroStars(v.stars != null ? String(v.stars) : "");
+        setHeroPower(v.power != null ? String(v.power) : "");
+      } else {
+        setHeroName("");
+        setHeroLevel("");
+        setHeroStars("");
+        setHeroPower("");
+      }
+
+      setHeroDetailsOpen(true);
     } finally {
       setHeroDetailsBusy(false);
-      setHeroDetailsOpen(true);
     }
   }
 
   async function extractHeroDetails() {
     if (!heroDetailsUploadId) return;
-    setHeroExtractBusy(true);
+
+    setHeroDetailsErr(null);
     setHeroExtractMsg(null);
+    setHeroExtractBusy(true);
+
     try {
       const res = await fetch("/api/hero/extract", {
         method: "POST",
@@ -487,19 +661,19 @@ export default function Home() {
         body: JSON.stringify({ upload_id: heroDetailsUploadId }),
       });
 
-      const payload = (await res.json().catch(() => null)) as { ok?: boolean; extracted?: any; error?: string } | null;
+      const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+
       if (!res.ok || !payload?.ok) {
         const msg = payload?.error ?? `HTTP ${res.status}`;
         setHeroDetailsErr(`Extract failed: ${msg}`);
         return;
       }
 
-      const ex = payload.extracted ?? {};
-      setHeroName(ex?.name ?? "");
-      setHeroLevel(String(ex?.level ?? ""));
-      setHeroStars(String(ex?.stars ?? ""));
-      setHeroPower(String(ex?.power ?? ""));
-      setHeroExtractMsg("Extracted ✅ (review fields, then Save)");
+      await openHeroDetails(heroDetailsUploadId);
+      setHeroExtractMsg("Extracted ✅ (review + Save if you want to edit).");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setHeroDetailsErr(`Extract failed: ${msg}`);
     } finally {
       setHeroExtractBusy(false);
     }
@@ -507,6 +681,7 @@ export default function Home() {
 
   async function saveHeroDetails() {
     if (!heroDetailsUploadId) return;
+
     setHeroDetailsBusy(true);
     setHeroDetailsErr(null);
 
@@ -539,137 +714,34 @@ export default function Home() {
     }
   }
 
-  async function loadDroneUploads() {
-    setDroneBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/uploads/list?kind=drone&limit=120", { credentials: "include" });
-      const payload = (await res.json().catch(() => null)) as
-        | { ok?: boolean; uploads?: HeroUpload[]; error?: string }
-        | null;
-
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setDroneMsg(`Load failed: ${err}`);
-        setDroneUploads([]);
-        return;
-      }
-
-      setDroneUploads(payload.uploads ?? []);
-    } finally {
-      setDroneBusy(false);
-    }
-  }
-
-  async function openDroneDetails(upload_id: number) {
-    setDroneUploadId(upload_id);
-    setDroneMsg(null);
-    setDroneExtracted(null);
-    setDroneImg(null);
-    setDroneFacts(null);
-
-    setDroneBusy(true);
-    try {
-      const res = await fetch(`/api/drone/details?upload_id=${upload_id}`, { credentials: "include" });
-      const payload = (await res.json().catch(() => null)) as
-        | { ok?: boolean; image_url?: string | null; facts?: any | null; error?: string }
-        | null;
-
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setDroneMsg(`Details load failed: ${err}`);
-        return;
-      }
-
-      setDroneImg(payload.image_url ?? null);
-      setDroneFacts(payload.facts ?? null);
-    } finally {
-      setDroneBusy(false);
-    }
-  }
-
-  async function extractDrone() {
-    if (!droneUploadId) {
-      setDroneMsg("Pick an upload first.");
-      return;
-    }
-    setDroneExtractBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/drone/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ upload_id: droneUploadId }),
-      });
-      const payload = (await res.json().catch(() => null)) as
-        | { ok?: boolean; extracted?: any; error?: string; raw?: string }
-        | null;
-
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setDroneMsg(`Extract failed: ${err}`);
-        return;
-      }
-
-      setDroneExtracted(payload.extracted ?? null);
-      setDroneMsg("Extracted ✅ (review, then Save)");
-    } finally {
-      setDroneExtractBusy(false);
-    }
-  }
-
-  async function saveDrone() {
-    if (!droneUploadId) {
-      setDroneMsg("Pick an upload first.");
-      return;
-    }
-    if (!droneExtracted) {
-      setDroneMsg("Nothing to save. Click Extract first.");
-      return;
-    }
-
-    setDroneSaveBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/drone/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ upload_id: droneUploadId, extracted: droneExtracted }),
-      });
-      const payload = (await res.json().catch(() => null)) as
-        | { ok?: boolean; fact?: any; error?: string }
-        | null;
-
-      if (!res.ok || !payload?.ok) {
-        const err = payload?.error ?? `HTTP ${res.status}`;
-        setDroneMsg(`Save failed: ${err}`);
-        return;
-      }
-
-      await openDroneDetails(droneUploadId);
-      setDroneMsg("Saved ✅");
-    } finally {
-      setDroneSaveBusy(false);
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#070b18] to-[#040611] text-white">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="text-xs uppercase tracking-[0.35em] text-white/50">SquadAssistant</div>
-              <div className="mt-2 text-2xl font-semibold text-white/90">Your Command Center</div>
-              <div className="mt-1 text-sm text-white/60">
-                Squads • Heroes • Drone • Analyzer • Optimizer • Chat
-              </div>
-            </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
+      {/* Main Chat Area */}
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-[96px] pt-6">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-white/90">Squad Assistant</div>
+          <div className="mt-1 text-xs text-white/55">Chat above. Tools are in the bottom row.</div>
+        </div>
 
-            <div className="flex flex-wrap gap-2">
-              <BottomButton label="Upload Image" onClick={() => setUploadOpen(true)} />
+        <div className="flex-1 min-h-0 rounded-3xl border border-white/10 bg-white/5 p-4">
+          <ChatWindow
+            endpoint="/api/chat"
+            emoji="🧠"
+            emptyStateComponent={
+              <div className="text-sm text-slate-400/80">
+                Ask about squads, heroes, skills, gear, drone, overlord, and game facts. Use Image Upload
+                to add screenshots.
+              </div>
+            }
+          />
+        </div>
+      </div>
+
+      {/* Bottom Button Row (left group + right group) */}
+      <div className="fixed bottom-0 left-0 right-0 z-[999] border-t border-white/15 bg-slate-950">
+        <div className="mx-auto max-w-6xl px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
               <BottomButton
                 label="Squads"
                 onClick={async () => {
@@ -677,103 +749,34 @@ export default function Home() {
                   setSquadsOpen(true);
                 }}
               />
-              <BottomButton
-                label="Drone"
-                onClick={async () => {
-                  await loadDroneUploads();
-                  setDroneOpen(true);
-                }}
-              />
+              <BottomButton label="Drone" onClick={() => setDroneOpen(true)} />
               <BottomButton label="Overlord" onClick={() => setOverlordOpen(true)} />
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <BottomButton label="Battle Report" onClick={() => setBattleOpen(true)} />
+              <BottomButton label="Battle Report Analyzer" onClick={() => setBattleOpen(true)} />
               <BottomButton label="Optimizer" onClick={() => setOptimizerOpen(true)} />
+              <BottomButton label="Image Upload" onClick={() => setUploadOpen(true)} />
             </div>
           </div>
-        </div>
 
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="text-xs uppercase tracking-[0.35em] text-white/50">Main Chat</div>
-          <div className="mt-3">
-            {/* FIX: ChatWindow requires endpoint */}
-            <ChatWindow endpoint="/api/chat" />
+          <div className="mt-1 text-center text-[10px] uppercase tracking-[0.25em] text-white/40">
+            Tools
           </div>
         </div>
       </div>
 
-      {/* Upload Modal */}
-      <ModalShell title="Upload Image" subtitle={`Kind: ${kindLabel}`} open={uploadOpen} onClose={() => setUploadOpen(false)}>
+      {/* Squads Modal (WIRED) */}
+      <ModalShell
+        title="Squads"
+        subtitle="Assign hero images to squad slots (slot → upload_id)."
+        open={squadsOpen}
+        onClose={() => setSquadsOpen(false)}
+      >
         <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Upload kind</div>
-              <div className="flex flex-wrap gap-2">
-                {(["battle_report", "hero_profile", "hero_skills", "gear", "drone", "overlord"] as UploadUIKind[]).map((k) => (
-                  <button
-                    key={k}
-                    className={cn(
-                      "rounded-xl border px-3 py-2 text-xs",
-                      uploadKind === k
-                        ? "border-cyan-300/50 bg-cyan-500/10 text-cyan-100"
-                        : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
-                    )}
-                    onClick={() => setUploadKind(k)}
-                  >
-                    {k}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                disabled={uploadBusy}
-                onChange={(e) => void handleUploadFiles(e.target.files)}
-                className="block w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/70"
-              />
-              {uploadProgress ? (
-                <div className="mt-2 text-xs text-white/55">
-                  Uploading {uploadProgress.current} / {uploadProgress.total}
-                </div>
-              ) : null}
-              {uploadMsg ? (
-                <div className="mt-2 rounded-xl border border-white/10 bg-white/5 p-2 text-sm text-white/70">
-                  {uploadMsg}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {uploadResults.length ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Results</div>
-              <div className="mt-2 space-y-1 text-sm text-white/70">
-                {uploadResults.map((r, i) => (
-                  <div key={i} className={cn("rounded-lg px-2 py-1", r.ok ? "bg-emerald-500/10" : "bg-rose-500/10")}>
-                    {r.fileName}: {r.message}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </ModalShell>
-
-      {/* Squads Modal */}
-      <ModalShell title="Squads" subtitle="Assign heroes to slots" open={squadsOpen} onClose={() => setSquadsOpen(false)}>
-        <div className="space-y-4">
-          {squadsMsg ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{squadsMsg}</div>
-          ) : null}
-
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
             {squadsBusy
-              ? "Loading..."
+              ? "Loading squads + hero uploads…"
               : squadsMsg
               ? squadsMsg
               : "Click a hero slot, then click a hero image to assign it. Use Clear slot to remove. Use Open Hero Details to edit name/level/stars."}
@@ -797,15 +800,15 @@ export default function Home() {
         </div>
       </ModalShell>
 
-      {/* Hero Details Modal */}
+      {/* Hero Details Modal (NOW WITH EXTRACT) */}
       <ModalShell
         title="Hero Profile"
-        subtitle={heroDetailsUploadId ? `Upload ID: ${heroDetailsUploadId}` : "Hero details"}
+        subtitle={
+          heroDetailsUploadId ? `Upload ID: ${heroDetailsUploadId}` : "Hero details"
+        }
         open={heroDetailsOpen}
         onClose={() => setHeroDetailsOpen(false)}
       >
-        {/* Hero modal content unchanged from previous version */}
-        {/* (kept as-is to avoid regressions) */}
         <div className="space-y-4">
           {heroDetailsErr ? (
             <div className="rounded-2xl border border-rose-400/30 bg-rose-950/20 p-3 text-sm text-rose-100/80">
@@ -814,104 +817,122 @@ export default function Home() {
           ) : null}
 
           {heroExtractMsg ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{heroExtractMsg}</div>
+            <div className="rounded-2xl border border-emerald-400/20 bg-emerald-950/10 p-3 text-xs text-emerald-100/80">
+              {heroExtractMsg}
+            </div>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Hero image</div>
+          <div className="grid gap-4 sm:grid-cols-[260px,1fr]">
+            <div className="rounded-3xl border border-white/10 bg-black/20 p-3">
               {heroDetailsImg ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={heroDetailsImg}
-                  alt="Hero screenshot"
-                  className="mt-3 w-full rounded-xl border border-white/10"
+                  alt="Hero image"
+                  className="h-auto w-full rounded-2xl object-cover"
                 />
               ) : (
-                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-6 text-sm text-white/60">
-                  No image.
+                <div className="flex h-48 items-center justify-center text-sm text-white/50">
+                  No image loaded.
                 </div>
               )}
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                    (!heroDetailsUploadId || heroExtractBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => void extractHeroDetails()}
-                  disabled={!heroDetailsUploadId || heroExtractBusy}
-                >
-                  {heroExtractBusy ? "Extracting..." : "Extract from Image"}
-                </button>
-
-                <button
-                  className={cn(
-                    "rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs uppercase tracking-[0.22em] text-emerald-100 hover:bg-emerald-500/15",
-                    (!heroDetailsUploadId || heroDetailsBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => void saveHeroDetails()}
-                  disabled={!heroDetailsUploadId || heroDetailsBusy}
-                >
-                  Save
-                </button>
-
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                    (!heroDetailsUploadId || heroDetailsBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => (heroDetailsUploadId ? void openHeroDetails(heroDetailsUploadId) : null)}
-                  disabled={!heroDetailsUploadId || heroDetailsBusy}
-                >
-                  Reload
-                </button>
-              </div>
-
-              <div className="mt-3 text-xs text-white/55">
-                Saved data is stored in facts and linked back to this upload. This avoids duplicates and makes it persist after reload.
+              <div className="mt-2 text-xs text-white/50">
+                Tip: Hit <span className="text-white/80">Extract from Image</span> to auto-fill.
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Hero name</div>
-                <input
-                  value={heroName}
-                  onChange={(e) => setHeroName(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80"
-                  placeholder="e.g., Murphy"
-                />
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Level</div>
-                    <input
-                      value={heroLevel}
-                      onChange={(e) => setHeroLevel(e.target.value)}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Stars</div>
-                    <input
-                      value={heroStars}
-                      onChange={(e) => setHeroStars(e.target.value)}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Power (optional)</div>
-                    <input
-                      value={heroPower}
-                      onChange={(e) => setHeroPower(e.target.value)}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80"
-                      placeholder="0"
-                    />
-                  </div>
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Hero name</div>
+                  <input
+                    value={heroName}
+                    onChange={(e) => setHeroName(e.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 outline-none focus:border-white/20"
+                    placeholder="e.g., Murphy"
+                  />
                 </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Level</div>
+                  <input
+                    value={heroLevel}
+                    onChange={(e) => setHeroLevel(e.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 outline-none focus:border-white/20"
+                    placeholder="e.g., 165"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">Stars</div>
+                  <input
+                    value={heroStars}
+                    onChange={(e) => setHeroStars(e.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 outline-none focus:border-white/20"
+                    placeholder="e.g., 5"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/50">
+                    Power (optional)
+                  </div>
+                  <input
+                    value={heroPower}
+                    onChange={(e) => setHeroPower(e.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 outline-none focus:border-white/20"
+                    placeholder="e.g., 123456"
+                    inputMode="numeric"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void extractHeroDetails()}
+                  disabled={heroDetailsBusy || heroExtractBusy || !heroDetailsUploadId}
+                  className={cn(
+                    "rounded-2xl border border-emerald-400/25 bg-emerald-950/20 px-4 py-2",
+                    "text-xs uppercase tracking-widest text-emerald-200/90 hover:border-emerald-300/40 transition",
+                    (heroDetailsBusy || heroExtractBusy || !heroDetailsUploadId) &&
+                      "opacity-50 cursor-not-allowed"
+                  )}
+                  title="Use AI to read the hero image and fill fields (low-cost mode)."
+                >
+                  {heroExtractBusy ? "Extracting…" : "Extract from Image"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void saveHeroDetails()}
+                  disabled={heroDetailsBusy || !heroDetailsUploadId}
+                  className={cn(
+                    "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
+                    "text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-300/40 transition",
+                    heroDetailsBusy && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {heroDetailsBusy ? "Saving..." : "Save"}
+                </button>
+
+                {heroDetailsUploadId ? (
+                  <button
+                    type="button"
+                    onClick={() => void openHeroDetails(heroDetailsUploadId)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
+                  >
+                    Reload
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="text-xs text-white/45">
+                Saved data is stored in{" "}
+                <span className="text-white/75">facts</span> and linked back to this upload. This avoids
+                duplicates and makes it persist after reload.
               </div>
 
               {heroDetailsFacts ? (
@@ -930,137 +951,13 @@ export default function Home() {
       {/* Drone Modal */}
       <ModalShell
         title="Drone"
-        subtitle={droneUploadId ? `Upload ID: ${droneUploadId}` : "Components • boosts • chip sets"}
+        subtitle="Components • boosts • chip sets"
         open={droneOpen}
         onClose={() => setDroneOpen(false)}
       >
-        <div className="space-y-4">
-          {droneMsg ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{droneMsg}</div>
-          ) : null}
-
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone uploads</div>
-                <div className="mt-1 text-sm text-white/80">
-                  {droneUploads.length ? `${droneUploads.length} found` : "None found yet"}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                    droneBusy && "opacity-60"
-                  )}
-                  onClick={() => void loadDroneUploads()}
-                  disabled={droneBusy}
-                >
-                  Reload list
-                </button>
-              </div>
-            </div>
-
-            {droneUploads.length ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {droneUploads.slice(0, 20).map((u) => (
-                  <button
-                    key={u.id}
-                    className={cn(
-                      "rounded-xl border px-3 py-2 text-xs",
-                      droneUploadId === u.id
-                        ? "border-cyan-300/50 bg-cyan-500/10 text-cyan-100"
-                        : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
-                    )}
-                    onClick={() => void openDroneDetails(u.id)}
-                    title={u.storage_path ?? ""}
-                  >
-                    #{u.id}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 text-sm text-white/60">
-                Upload drone screenshots via <span className="text-white/80">Upload Image</span> and choose{" "}
-                <span className="text-white/85">Drone</span> as the kind. Then come back here.
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone image</div>
-
-              {droneImg ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={droneImg} alt="Drone screenshot" className="mt-3 w-full rounded-xl border border-white/10" />
-              ) : (
-                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-6 text-sm text-white/60">
-                  Select an upload above to preview the screenshot.
-                </div>
-              )}
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                    (!droneUploadId || droneExtractBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => void extractDrone()}
-                  disabled={!droneUploadId || droneExtractBusy}
-                >
-                  {droneExtractBusy ? "Extracting..." : "Extract from Image"}
-                </button>
-
-                <button
-                  className={cn(
-                    "rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs uppercase tracking-[0.22em] text-emerald-100 hover:bg-emerald-500/15",
-                    (!droneUploadId || !droneExtracted || droneSaveBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => void saveDrone()}
-                  disabled={!droneUploadId || !droneExtracted || droneSaveBusy}
-                >
-                  {droneSaveBusy ? "Saving..." : "Save"}
-                </button>
-
-                <button
-                  className={cn(
-                    "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                    (!droneUploadId || droneBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  onClick={() => (droneUploadId ? void openDroneDetails(droneUploadId) : null)}
-                  disabled={!droneUploadId || droneBusy}
-                >
-                  Reload
-                </button>
-              </div>
-
-              <div className="mt-3 text-xs text-white/55">
-                Tip: Your “main data” drone screens: Attributes, Components, Extra Attributes, Combat Boost, Skill Chip.
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {droneExtracted ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Extracted payload</div>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-white/70">
-                    {JSON.stringify(droneExtracted, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-
-              {droneFacts ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Current facts row</div>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-white/70">
-                    {JSON.stringify(droneFacts, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          This modal is ready to be wired to your saved drone extraction data. For now, uploads + future optimizer can read drone rows via{" "}
+          <span className="text-white/85">kind = &quot;drone&quot;</span>.
         </div>
       </ModalShell>
 
@@ -1072,64 +969,198 @@ export default function Home() {
         onClose={() => setOverlordOpen(false)}
       >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          This modal is ready to be wired later. For now it remains a placeholder to avoid regressions.
+          This modal is ready to be wired to your saved overlord extraction data. For now, uploads + future optimizer can read overlord rows via{" "}
+          <span className="text-white/85">kind = &quot;overlord&quot;</span>.
         </div>
       </ModalShell>
 
-      {/* Battle Report Modal */}
-      <ModalShell title="Battle Report Analyzer" subtitle="Summary + Q&A" open={battleOpen} onClose={() => setBattleOpen(false)}>
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Summary</div>
-              <button
-                className={cn(
-                  "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                  battleBusy && "opacity-60"
-                )}
-                onClick={() => void runBattleSummary()}
-                disabled={battleBusy}
-              >
-                {battleBusy ? "Working..." : "Run"}
-              </button>
-            </div>
+      {/* Battle Report Analyzer Modal */}
+      <ModalShell
+        title="Battle Report Analyzer"
+        subtitle="Runs analysis over your saved battle report history and lets you ask follow-up questions"
+        open={battleOpen}
+        onClose={() => setBattleOpen(false)}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={runBattleSummary}
+              disabled={battleBusy}
+              className={cn(
+                "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
+                "text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-300/40 transition",
+                battleBusy && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {battleBusy ? "Running..." : "Run Summary"}
+            </button>
 
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/70 whitespace-pre-wrap">
-              {battleOut || "No summary yet."}
-            </div>
+            <button
+              type="button"
+              onClick={() => setBattleOut("")}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-widest text-white/70 hover:bg-white/10"
+            >
+              Clear
+            </button>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-xs uppercase tracking-[0.25em] text-white/45">Ask</div>
-            <textarea
-              value={battleMsg}
-              onChange={(e) => setBattleMsg(e.target.value)}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/80"
-              rows={3}
-              placeholder="Ask about strengths, weaknesses, what went right/wrong..."
-            />
-            <div className="mt-3 flex gap-2">
-              <button
-                className={cn(
-                  "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white/80 hover:bg-white/10",
-                  battleBusy && "opacity-60"
-                )}
-                onClick={() => void askBattleAnalyzer()}
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60">
+            Reminder: attacker/defender names or IDs, timestamps, and map coordinates are not saved (by design).
+          </div>
+
+          <div className="max-h-[45vh] overflow-auto rounded-2xl border border-white/10 bg-black/20 p-4">
+            <pre className="whitespace-pre-wrap text-sm text-white/80">
+              {battleOut || "Output will appear here."}
+            </pre>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs uppercase tracking-[0.25em] text-white/50">Ask the analyzer</div>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={battleMsg}
+                onChange={(e) => setBattleMsg(e.target.value)}
+                placeholder="Ask why you won/lost, strengths/weaknesses, what to change, lineup ideas, etc."
+                className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85 placeholder:text-white/35 outline-none focus:border-white/20"
                 disabled={battleBusy}
+              />
+              <button
+                type="button"
+                onClick={askBattleAnalyzer}
+                disabled={battleBusy || !battleMsg.trim()}
+                className={cn(
+                  "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-widest text-white/80 hover:bg-white/15",
+                  (battleBusy || !battleMsg.trim()) && "opacity-50 cursor-not-allowed"
+                )}
               >
-                {battleBusy ? "Working..." : "Ask"}
+                Send
               </button>
             </div>
           </div>
         </div>
       </ModalShell>
 
-      {/* Optimizer Modal */}
-      <ModalShell title="Optimizer" subtitle="Fine-tune after drone + analyzer" open={optimizerOpen} onClose={() => setOptimizerOpen(false)}>
+      {/* Optimizer Modal (shell only for now) */}
+      <ModalShell
+        title="Optimizer"
+        subtitle="Will reuse battle analyzer math core + pull from facts, battle history, squads, drone, overlord"
+        open={optimizerOpen}
+        onClose={() => setOptimizerOpen(false)}
+      >
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          Optimizer will pull from Battle Report Analyzer, Squads, Heroes, and Drone. We’ll fine-tune last.
+          Optimizer is not wired yet. Next step is to reuse the battle analyzer math core and then pull from:
+          AI facts DB, battle analyzer history, squads, drone, and overlord state. Then it becomes chat-driven like the analyzer.
+        </div>
+      </ModalShell>
+
+      {/* Upload Modal */}
+      <ModalShell
+        title="Image Upload"
+        subtitle="Upload up to 20 images at a time"
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+      >
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">Upload category</div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {[
+                { k: "battle_report", label: "Battle report" },
+                { k: "hero_profile", label: "Hero profile" },
+                { k: "hero_skills", label: "Hero skills" },
+                { k: "gear", label: "Gear" },
+                { k: "drone", label: "Drone" },
+                { k: "overlord", label: "Overlord" },
+              ].map((opt) => (
+                <button
+                  key={opt.k}
+                  type="button"
+                  onClick={() => setUploadKind(opt.k as UploadUIKind)}
+                  className={cn(
+                    "rounded-2xl border px-3 py-3 text-left text-sm transition",
+                    uploadKind === opt.k
+                      ? "border-fuchsia-300/40 bg-fuchsia-500/10"
+                      : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                >
+                  <div className="font-semibold text-white/85">{opt.label}</div>
+                  <div className="mt-1 text-xs text-white/55">Upload screenshots for this area</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 text-xs text-white/55">
+              Selected: <span className="text-white/80">{kindLabel}</span>
+              {uploadKind === "hero_skills" ? (
+                <span className="ml-2 text-white/45">(stored as Hero profile for now)</span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm font-semibold text-white/85">Select up to 20 images</div>
+
+            <div className="mt-4">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={uploadBusy}
+                onChange={(e) => {
+                  const files = e.target.files;
+                  void handleUploadFiles(files);
+                  e.currentTarget.value = "";
+                }}
+                className="block w-full text-sm text-slate-200/80 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-600/20 file:px-4 file:py-2 file:text-xs file:uppercase file:tracking-widest file:text-fuchsia-100 hover:file:bg-fuchsia-600/30 disabled:opacity-60"
+              />
+            </div>
+
+            <div className="mt-3 text-sm text-white/70">
+              {uploadBusy ? (
+                <span>
+                  Uploading… {uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : ""}
+                </span>
+              ) : uploadMsg ? (
+                <span>{uploadMsg}</span>
+              ) : (
+                <span>Choose images to upload.</span>
+              )}
+            </div>
+
+            {uploadResults.length > 0 ? (
+              <div className="mt-4 max-h-64 overflow-auto rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Results</div>
+                <ul className="mt-2 space-y-2">
+                  {uploadResults.map((r) => (
+                    <li
+                      key={`${r.fileName}-${r.message}`}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-white/85">{r.fileName}</div>
+                        <div className="text-xs text-white/55">{r.message}</div>
+                      </div>
+                      <div
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]",
+                          r.ok
+                            ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                            : "border border-rose-400/30 bg-rose-500/10 text-rose-200"
+                        )}
+                      >
+                        {r.ok ? "ok" : "fail"}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
       </ModalShell>
     </div>
   );
-        }
+}
+
