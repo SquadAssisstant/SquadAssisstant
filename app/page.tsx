@@ -2,6 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import { ChatWindow } from "@/components/ChatWindow";
+import { DroneComponentsEditor } from "@/components/drone/DroneComponentsEditor";
+import { DroneCombatBoostEditor } from "@/components/drone/DroneCombatBoostEditor";
 
 type SquadSlot = 1 | 2 | 3 | 4;
 type HeroSlotIndex = 1 | 2 | 3 | 4 | 5;
@@ -260,6 +262,15 @@ function SquadGrid({
 export default function Home() {
   const [squadsOpen, setSquadsOpen] = useState(false);
   const [droneOpen, setDroneOpen] = useState(false);
+
+  const [droneTab, setDroneTab] = useState<"overview" | "components" | "combat_boost" | "chips">("overview");
+  const [droneUploads, setDroneUploads] = useState<any[]>([]);
+  const [droneBusy, setDroneBusy] = useState(false);
+  const [droneMsg, setDroneMsg] = useState<string | null>(null);
+  const [selectedDroneUploadId, setSelectedDroneUploadId] = useState<number | null>(null);
+  const [selectedDroneImageUrl, setSelectedDroneImageUrl] = useState<string | null>(null);
+  const [droneOwnerId, setDroneOwnerId] = useState<string | null>(null);
+
   const [overlordOpen, setOverlordOpen] = useState(false);
   const [battleOpen, setBattleOpen] = useState(false);
   const [optimizerOpen, setOptimizerOpen] = useState(false);
@@ -301,17 +312,6 @@ export default function Home() {
   const [heroLevel, setHeroLevel] = useState("");
   const [heroStars, setHeroStars] = useState("");
   const [heroPower, setHeroPower] = useState("");
-
-  // Drone wiring (modal-level)
-  const [droneUploads, setDroneUploads] = useState<HeroUpload[]>([]);
-  const [droneUploadId, setDroneUploadId] = useState<number | null>(null);
-  const [droneBusy, setDroneBusy] = useState(false);
-  const [droneExtractBusy, setDroneExtractBusy] = useState(false);
-  const [droneSaveBusy, setDroneSaveBusy] = useState(false);
-  const [droneMsg, setDroneMsg] = useState<string | null>(null);
-  const [droneImg, setDroneImg] = useState<string | null>(null);
-  const [droneFacts, setDroneFacts] = useState<any | null>(null);
-  const [droneExtracted, setDroneExtracted] = useState<any | null>(null);
 
   const kindLabel = useMemo(() => {
     switch (uploadKind) {
@@ -496,14 +496,13 @@ export default function Home() {
     }
   }
 
-  async function loadSquadsAndHeroUploads() {
+  async function loadSquadsAndUploads() {
     setSquadsBusy(true);
     setSquadsMsg(null);
-
     try {
       const [stateRes, uploadsRes] = await Promise.all([
         fetch("/api/player/state", { credentials: "include" }),
-        fetch("/api/uploads/list?kind=hero_profile&limit=400", { credentials: "include" }),
+        fetch("/api/uploads/list?kind=hero_profile&limit=120", { credentials: "include" }),
       ]);
 
       const statePayload = (await stateRes.json().catch(() => null)) as PlayerStateResponse | null;
@@ -529,6 +528,69 @@ export default function Home() {
     } finally {
       setSquadsBusy(false);
     }
+  }
+
+  async function loadDroneUploads() {
+    setDroneBusy(true);
+    setDroneMsg(null);
+    try {
+      const res = await fetch("/api/uploads/list?kind=drone&limit=200", { credentials: "include" });
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        setDroneUploads([]);
+        setDroneMsg(json?.error ?? `Drone uploads load failed (HTTP ${res.status})`);
+        return;
+      }
+
+      const uploads = Array.isArray(json.uploads) ? json.uploads : [];
+      setDroneUploads(uploads);
+
+      if (selectedDroneUploadId) {
+        const match = uploads.find((u: any) => u.id === selectedDroneUploadId);
+        if (!match) {
+          setSelectedDroneUploadId(null);
+          setSelectedDroneImageUrl(null);
+          setDroneOwnerId(null);
+        } else {
+          await selectDroneUpload(match.id, match);
+        }
+      }
+    } catch (e: any) {
+      setDroneMsg(e?.message ?? "Drone uploads load failed");
+      setDroneUploads([]);
+    } finally {
+      setDroneBusy(false);
+    }
+  }
+
+  function ownerIdFromStoragePath(path?: string | null): string | null {
+    if (!path) return null;
+    const first = String(path).split("/")[0];
+    return first && first.length >= 8 ? first : null;
+  }
+
+  async function selectDroneUpload(uploadId: number, row?: any) {
+    setSelectedDroneUploadId(uploadId);
+
+    const r = row ?? droneUploads.find((u: any) => u.id === uploadId);
+    const owner =
+      ownerIdFromStoragePath(r?.storage_path) ??
+      ownerIdFromStoragePath(r?.storagePath) ??
+      null;
+    setDroneOwnerId(owner);
+
+    const url = r?.url ?? r?.public_url ?? r?.publicUrl ?? null;
+    if (url) {
+      setSelectedDroneImageUrl(url);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/drone/details?upload_id=${uploadId}`, { credentials: "include" });
+      const json = await res.json().catch(() => null);
+      if (res.ok) setSelectedDroneImageUrl(json?.image_url ?? null);
+    } catch {}
   }
 
   async function setSlot(squad: SquadSlot, slot: HeroSlotIndex, uploadId: number | null) {
@@ -670,131 +732,6 @@ export default function Home() {
     }
   }
 
-  async function loadDroneUploads() {
-    setDroneBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/uploads/list?kind=drone&limit=400", { credentials: "include" });
-      const payload = await safeReadResponse(res);
-
-      if (!res.ok) {
-        const msg = payload.json?.error ?? payload.json?.message ?? payload.text ?? `HTTP ${res.status}`;
-        setDroneMsg(`Load failed: ${String(msg)}`);
-        setDroneUploads([]);
-        return;
-      }
-
-      const uploads = (payload.json?.uploads ?? payload.json?.data ?? []) as HeroUpload[];
-      setDroneUploads(Array.isArray(uploads) ? uploads : []);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "unknown";
-      setDroneMsg(`Load failed: ${msg}`);
-      setDroneUploads([]);
-    } finally {
-      setDroneBusy(false);
-    }
-  }
-
-  async function openDroneDetails(uploadId: number) {
-    setDroneUploadId(uploadId);
-    setDroneMsg(null);
-    setDroneExtracted(null);
-    setDroneImg(null);
-    setDroneFacts(null);
-
-    setDroneBusy(true);
-    try {
-      const res = await fetch(`/api/drone/details?upload_id=${uploadId}`, { credentials: "include" });
-      const payload = await safeReadResponse(res);
-
-      if (!res.ok) {
-        const msg = payload.json?.error ?? payload.json?.message ?? payload.text ?? `HTTP ${res.status}`;
-        setDroneMsg(`Details load failed: ${String(msg)}`);
-        return;
-      }
-
-      setDroneImg(payload.json?.image_url ?? null);
-      setDroneFacts(payload.json?.facts ?? null);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "unknown";
-      setDroneMsg(`Details load failed: ${msg}`);
-    } finally {
-      setDroneBusy(false);
-    }
-  }
-
-  async function extractDrone() {
-    if (!droneUploadId) {
-      setDroneMsg("Pick an upload first.");
-      return;
-    }
-
-    setDroneExtractBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/drone/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ upload_id: droneUploadId }),
-      });
-
-      const payload = await safeReadResponse(res);
-
-      if (!res.ok) {
-        const msg = payload.json?.error ?? payload.json?.message ?? payload.text ?? `HTTP ${res.status}`;
-        setDroneMsg(`Extract failed: ${String(msg)}`);
-        return;
-      }
-
-      setDroneExtracted(payload.json?.extracted ?? payload.json?.data ?? null);
-      setDroneMsg("Extracted ✅ (review, then Save)");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "unknown";
-      setDroneMsg(`Extract failed: ${msg}`);
-    } finally {
-      setDroneExtractBusy(false);
-    }
-  }
-
-  async function saveDrone() {
-    if (!droneUploadId) {
-      setDroneMsg("Pick an upload first.");
-      return;
-    }
-    if (!droneExtracted) {
-      setDroneMsg("Nothing to save. Click Extract first.");
-      return;
-    }
-
-    setDroneSaveBusy(true);
-    setDroneMsg(null);
-    try {
-      const res = await fetch("/api/drone/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ upload_id: droneUploadId, extracted: droneExtracted }),
-      });
-
-      const payload = await safeReadResponse(res);
-
-      if (!res.ok) {
-        const msg = payload.json?.error ?? payload.json?.message ?? payload.text ?? `HTTP ${res.status}`;
-        setDroneMsg(`Save failed: ${String(msg)}`);
-        return;
-      }
-
-      await openDroneDetails(droneUploadId);
-      setDroneMsg("Saved ✅");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "unknown";
-      setDroneMsg(`Save failed: ${msg}`);
-    } finally {
-      setDroneSaveBusy(false);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-black text-white">
       {/* Main Chat Area */}
@@ -802,7 +739,15 @@ export default function Home() {
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-xs uppercase tracking-[0.35em] text-white/50">Main Chat</div>
           <div className="mt-3">
-            <ChatWindow endpoint="/api/chat" />
+            <ChatWindow
+              endpoint="/api/chat"
+              emoji="🧠"
+              emptyStateComponent={
+                <div className="text-sm text-slate-400/80">
+                  Ask anything. You can reference squads, heroes, drone, and battle reports once saved.
+                </div>
+              }
+            />
           </div>
         </div>
       </div>
@@ -814,7 +759,7 @@ export default function Home() {
           <BottomButton
             label="Squads"
             onClick={async () => {
-              await loadSquadsAndHeroUploads();
+              await loadSquadsAndUploads();
               setSquadsOpen(true);
             }}
           />
@@ -822,6 +767,7 @@ export default function Home() {
             label="Drone"
             onClick={async () => {
               await loadDroneUploads();
+              setDroneTab("overview");
               setDroneOpen(true);
             }}
           />
@@ -832,12 +778,7 @@ export default function Home() {
       </div>
 
       {/* Upload Modal */}
-      <ModalShell
-        title="Upload"
-        subtitle={`Kind: ${kindLabel}`}
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-      >
+      <ModalShell title="Upload" subtitle={`Kind: ${kindLabel}`} open={uploadOpen} onClose={() => setUploadOpen(false)}>
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -850,19 +791,19 @@ export default function Home() {
                   { k: "gear", label: "Gear" },
                   { k: "drone", label: "Drone" },
                   { k: "overlord", label: "Overlord" },
-                ].map((it) => (
+                ].map((opt) => (
                   <button
-                    key={it.k}
+                    key={opt.k}
                     type="button"
-                    onClick={() => setUploadKind(it.k as UploadUIKind)}
+                    onClick={() => setUploadKind(opt.k as UploadUIKind)}
                     className={cn(
-                      "rounded-2xl border px-3 py-2 text-xs",
-                      uploadKind === it.k
+                      "rounded-2xl border px-3 py-3 text-left text-sm transition",
+                      uploadKind === opt.k
                         ? "border-fuchsia-300/40 bg-fuchsia-950/20 text-fuchsia-100/90"
                         : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
                     )}
                   >
-                    {it.label}
+                    <div className="text-xs uppercase tracking-[0.25em] opacity-70">{opt.label}</div>
                   </button>
                 ))}
               </div>
@@ -897,10 +838,7 @@ export default function Home() {
                 {uploadResults.map((r, i) => (
                   <div
                     key={i}
-                    className={cn(
-                      "rounded-xl px-2 py-1",
-                      r.ok ? "bg-emerald-500/10" : "bg-rose-500/10"
-                    )}
+                    className={cn("rounded-xl px-2 py-1", r.ok ? "bg-emerald-500/10" : "bg-rose-500/10")}
                   >
                     {r.fileName}: {r.message}
                   </div>
@@ -912,12 +850,7 @@ export default function Home() {
       </ModalShell>
 
       {/* Squads Modal */}
-      <ModalShell
-        title="Squads"
-        subtitle="Assign heroes to slots"
-        open={squadsOpen}
-        onClose={() => setSquadsOpen(false)}
-      >
+      <ModalShell title="Squads" subtitle="Assign heroes to slots" open={squadsOpen} onClose={() => setSquadsOpen(false)}>
         <div className="space-y-4">
           {squadsMsg ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">
@@ -988,8 +921,7 @@ export default function Home() {
                   className={cn(
                     "rounded-2xl border border-white/10 bg-white/5 px-4 py-2",
                     "text-xs uppercase tracking-widest text-white/70 hover:bg-white/10",
-                    (heroDetailsBusy || heroExtractBusy || !heroDetailsUploadId) &&
-                      "opacity-50 cursor-not-allowed"
+                    (heroDetailsBusy || heroExtractBusy || !heroDetailsUploadId) && "opacity-50 cursor-not-allowed"
                   )}
                   title="Use AI to read the hero image and fill fields (low-cost mode)."
                 >
@@ -1081,7 +1013,7 @@ export default function Home() {
       {/* Drone Modal */}
       <ModalShell
         title="Drone"
-        subtitle="Components • boosts • chip sets"
+        subtitle="Overview • Components • Combat Boost • Skill Chips"
         open={droneOpen}
         onClose={() => setDroneOpen(false)}
       >
@@ -1095,9 +1027,12 @@ export default function Home() {
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone uploads</div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone screenshots</div>
                 <div className="mt-1 text-sm text-white/75">
-                  {droneUploads.length ? `${droneUploads.length} found` : "None found yet"}
+                  {droneUploads.length ? `${droneUploads.length} uploaded` : "None yet"}
+                </div>
+                <div className="mt-1 text-xs text-white/45">
+                  Select a drone screenshot so we can derive your profile id from the storage path.
                 </div>
               </div>
 
@@ -1117,14 +1052,14 @@ export default function Home() {
 
             {droneUploads.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                {droneUploads.slice(0, 40).map((u) => (
+                {droneUploads.slice(0, 60).map((u: any) => (
                   <button
                     key={u.id}
                     type="button"
-                    onClick={() => void openDroneDetails(u.id)}
+                    onClick={() => void selectDroneUpload(u.id, u)}
                     className={cn(
                       "rounded-2xl border px-3 py-2 text-xs",
-                      droneUploadId === u.id
+                      selectedDroneUploadId === u.id
                         ? "border-fuchsia-300/40 bg-fuchsia-950/20 text-fuchsia-100/90"
                         : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
                     )}
@@ -1136,109 +1071,107 @@ export default function Home() {
               </div>
             ) : (
               <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
-                Upload drone screenshots via <span className="text-white/80">Upload</span> and choose{" "}
-                <span className="text-white/80">drone</span>.
+                Upload drone screenshots via <span className="text-white/80">Upload</span> →{" "}
+                <span className="text-white/80">Drone</span>.
               </div>
             )}
-          </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone image</div>
-
-              {droneImg ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={droneImg}
-                  alt="Drone screenshot"
-                  className="mt-3 w-full rounded-2xl border border-white/10"
-                />
-              ) : (
-                <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-6 text-sm text-white/60">
-                  Select an upload above to preview.
-                </div>
-              )}
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void extractDrone()}
-                  disabled={!droneUploadId || droneExtractBusy || droneBusy}
-                  className={cn(
-                    "rounded-2xl border border-white/10 bg-white/5 px-4 py-2",
-                    "text-xs uppercase tracking-widest text-white/70 hover:bg-white/10",
-                    (!droneUploadId || droneExtractBusy || droneBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                  title="Use AI to read the drone image and extract the main fields."
-                >
-                  {droneExtractBusy ? "Extracting…" : "Extract from Image"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void saveDrone()}
-                  disabled={!droneUploadId || !droneExtracted || droneSaveBusy || droneBusy}
-                  className={cn(
-                    "rounded-2xl border border-fuchsia-400/25 bg-fuchsia-950/20 px-4 py-2",
-                    "text-xs uppercase tracking-widest text-fuchsia-200/90 hover:border-fuchsia-300/40 transition",
-                    (!droneUploadId || !droneExtracted || droneSaveBusy || droneBusy) && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {droneSaveBusy ? "Saving..." : "Save"}
-                </button>
-
-                {droneUploadId ? (
-                  <button
-                    type="button"
-                    onClick={() => void openDroneDetails(droneUploadId)}
-                    disabled={droneBusy}
-                    className={cn(
-                      "rounded-2xl border border-white/10 bg-white/5 px-4 py-2",
-                      "text-xs uppercase tracking-widest text-white/70 hover:bg-white/10",
-                      droneBusy && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    Reload
-                  </button>
-                ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/55">
+              <div>
+                Selected upload:{" "}
+                <span className="text-white/80">{selectedDroneUploadId ? `#${selectedDroneUploadId}` : "none"}</span>
               </div>
-
-              <div className="mt-3 text-xs text-white/45">
-                Tip: the “main” drone screenshots you sent (Attributes, Components, Extra Attributes, Combat Boost, Skill Chip)
-                are enough for now—details can be refined later.
+              <div className="text-white/30">•</div>
+              <div>
+                Derived owner id: <span className="text-white/80">{droneOwnerId ?? "—"}</span>
               </div>
             </div>
+          </div>
 
-            <div className="space-y-4">
-              {droneExtracted ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Extracted payload</div>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-white/70">
-                    {JSON.stringify(droneExtracted, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-
-              {droneFacts ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Current facts row</div>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-white/70">
-                    {JSON.stringify(droneFacts, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-2">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { k: "overview", label: "Overview" },
+                { k: "components", label: "Components" },
+                { k: "combat_boost", label: "Combat Boost" },
+                { k: "chips", label: "Skill Chips" },
+              ].map((t) => (
+                <button
+                  key={t.k}
+                  type="button"
+                  onClick={() => setDroneTab(t.k as any)}
+                  className={cn(
+                    "rounded-2xl border px-3 py-2 text-xs uppercase tracking-[0.25em]",
+                    droneTab === t.k
+                      ? "border-fuchsia-300/40 bg-fuchsia-950/20 text-fuchsia-100/90"
+                      : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
+
+          {droneTab === "overview" ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Selected image</div>
+                {selectedDroneImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedDroneImageUrl}
+                    alt="Drone screenshot"
+                    className="mt-3 w-full rounded-2xl border border-white/10"
+                  />
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-6 text-sm text-white/60">
+                    Pick a drone screenshot above.
+                  </div>
+                )}
+                <div className="mt-3 text-xs text-white/45">
+                  This tab is a quick sanity check: if the screenshot loads, the rest of the tabs can save facts tied to your profile.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">What we’re saving</div>
+                <div className="mt-2 text-sm text-white/70 space-y-2">
+                  <div>• Components progress (percent + level per component)</div>
+                  <div>• Combat Boost + Skill Chip Sets</div>
+                  <div>• Squad mapping (dropdown per squad slot) is inside the Skill Chip Sets save object</div>
+                </div>
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/55">
+                  If <span className="text-white/80">Derived owner id</span> shows “—”, select a different drone upload that has a storage_path.
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {droneTab === "components" ? (
+            droneOwnerId ? (
+              <DroneComponentsEditor ownerId={droneOwnerId} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                Select a drone screenshot first so we can derive your owner id.
+              </div>
+            )
+          ) : null}
+
+          {droneTab === "combat_boost" || droneTab === "chips" ? (
+            droneOwnerId ? (
+              <DroneCombatBoostEditor ownerId={droneOwnerId} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                Select a drone screenshot first so we can derive your owner id.
+              </div>
+            )
+          ) : null}
         </div>
       </ModalShell>
 
       {/* Overlord Modal */}
-      <ModalShell
-        title="Overlord"
-        subtitle="Training • promotion • skills"
-        open={overlordOpen}
-        onClose={() => setOverlordOpen(false)}
-      >
+      <ModalShell title="Overlord" subtitle="Training • promotion • skills" open={overlordOpen} onClose={() => setOverlordOpen(false)}>
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           This modal is ready to be wired to your saved overlord extraction data. For now, uploads + future optimizer can read overlord rows via{" "}
           <span className="text-white/85">kind = &quot;overlord&quot;</span>.
@@ -1325,4 +1258,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-  }
+}
