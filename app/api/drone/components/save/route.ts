@@ -2,8 +2,8 @@
 import { NextResponse } from "next/server";
 
 type SaveBody = {
-  player_id: string;
-  state: any;
+  owner_id: string;
+  value: any; // { kind:"drone_components", components:[...] }
   source_urls?: string[];
 };
 
@@ -15,13 +15,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { player_id, state, source_urls = [] } = body;
-  if (!player_id) return NextResponse.json({ error: "player_id is required" }, { status: 400 });
-  if (!state || state.kind !== "drone_components") {
-    return NextResponse.json({ error: "state.kind must be drone_components" }, { status: 400 });
+  const { owner_id, value, source_urls = [] } = body;
+
+  if (!owner_id) return NextResponse.json({ error: "owner_id is required" }, { status: 400 });
+  if (!value || value.kind !== "drone_components") {
+    return NextResponse.json({ error: "value.kind must be drone_components" }, { status: 400 });
   }
 
-  const key = `${player_id}:drone:components`;
+  const key = `${owner_id}:drone:components`;
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
   const res = await fetch(`${baseUrl}/api/facts/upsert`, {
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     body: JSON.stringify({
       domain: "drone",
       key,
-      value: state,
+      value,
       status: "confirmed",
       confidence: 1,
       source_urls,
@@ -38,8 +39,7 @@ export async function POST(req: Request) {
   });
 
   const json = await res.json();
-  if (!res.ok) {
-    return NextResponse.json({ error: json?.error ?? "Save failed" }, { status: res.status });
-  }
+  if (!res.ok) return NextResponse.json({ error: json?.error ?? "Save failed" }, { status: res.status });
+
   return NextResponse.json(json);
 }
