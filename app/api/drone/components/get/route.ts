@@ -4,11 +4,11 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const player_id = searchParams.get("player_id");
-  if (!player_id) return NextResponse.json({ error: "player_id is required" }, { status: 400 });
+  const owner_id = searchParams.get("owner_id");
+  if (!owner_id) return NextResponse.json({ error: "owner_id is required" }, { status: 400 });
 
   const supabase = supabaseAdmin();
-  const key = `${player_id}:drone:components`;
+  const key = `${owner_id}:drone:components`;
 
   const res = await supabase.from("facts").select("*").eq("key", key).maybeSingle();
   if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
