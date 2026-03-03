@@ -1,9 +1,19 @@
-// components/drone/DroneComponentsEditor.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import type { DroneComponentsState } from "@/lib/drone/components";
-import { DEFAULT_DRONE_COMPONENT_KEYS } from "@/lib/drone/components";
+import React, { useEffect, useState } from "react";
+
+type DroneComponent = {
+  key: string;     // supports 5 or 6 without changing schema
+  label?: string;
+  percent?: number;
+  level?: number;
+};
+
+type DroneComponentsValue = {
+  kind: "drone_components";
+  components: DroneComponent[];
+  saved_at: string;
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -13,36 +23,32 @@ function prettyKey(k: string) {
   return k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-export function DroneComponentsEditor({ playerId }: { playerId: string }) {
+const DEFAULT_KEYS = ["component_1", "component_2", "component_3", "component_4", "component_5", "component_6"];
+
+export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const [state, setState] = useState<DroneComponentsState>(() => ({
+  const [value, setValue] = useState<DroneComponentsValue>(() => ({
     kind: "drone_components",
     saved_at: nowIso(),
-    components: DEFAULT_DRONE_COMPONENT_KEYS.map((key) => ({
-      key,
-      label: prettyKey(key),
-      percent: undefined,
-      level: undefined,
-    })),
+    components: DEFAULT_KEYS.map((k) => ({ key: k, label: prettyKey(k) })),
   }));
-
-  const key = useMemo(() => `${playerId}:drone:components`, [playerId]);
 
   async function load() {
     setLoading(true);
-    setError(null);
+    setErr(null);
     try {
-      const res = await fetch(`/api/drone/components/get?player_id=${encodeURIComponent(playerId)}`);
+      const res = await fetch(`/api/drone/components/get?owner_id=${encodeURIComponent(ownerId)}`, { credentials: "include" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Load failed");
+
       if (json?.row?.value?.kind === "drone_components") {
-        setState(json.row.value as DroneComponentsState);
+        setValue(json.row.value as DroneComponentsValue);
       }
     } catch (e: any) {
-      setError(e?.message ?? "Load failed");
+      setErr(e?.message ?? "Load failed");
     } finally {
       setLoading(false);
     }
@@ -50,24 +56,26 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
 
   async function save() {
     setSaving(true);
-    setError(null);
+    setErr(null);
     try {
       const res = await fetch(`/api/drone/components/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
-          player_id: playerId,
-          state: { ...state, saved_at: nowIso() },
+          owner_id: ownerId,
+          value: { ...value, saved_at: nowIso() },
           source_urls: [],
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
+
       if (json?.row?.value?.kind === "drone_components") {
-        setState(json.row.value as DroneComponentsState);
+        setValue(json.row.value as DroneComponentsValue);
       }
     } catch (e: any) {
-      setError(e?.message ?? "Save failed");
+      setErr(e?.message ?? "Save failed");
     } finally {
       setSaving(false);
     }
@@ -76,26 +84,19 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId]);
+  }, [ownerId]);
 
   if (loading) return <div className="text-sm text-white/60">Loading components…</div>;
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
-        </div>
+      {err ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{err}</div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.35em] text-white/50">Drone Components</div>
-          <div className="mt-1 text-sm text-white/70">
-            Enter the % and Lv shown on each component tile.
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm text-white/70">Enter the % and Lv shown on each component tile.</div>
+        <div className="flex gap-2">
           <button
             onClick={load}
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
@@ -113,7 +114,7 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        {state.components.map((c, idx) => (
+        {value.components.map((c, idx) => (
           <div key={`${c.key}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-sm font-semibold text-white">{c.label ?? prettyKey(c.key)}</div>
 
@@ -124,7 +125,7 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
                   value={c.percent ?? ""}
                   onChange={(e) => {
                     const v = e.target.value ? Number(e.target.value) : undefined;
-                    setState((s) => {
+                    setValue((s) => {
                       const next = [...s.components];
                       next[idx] = { ...next[idx], percent: Number.isFinite(v as any) ? v : undefined };
                       return { ...s, components: next };
@@ -141,7 +142,7 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
                   value={c.level ?? ""}
                   onChange={(e) => {
                     const v = e.target.value ? Number(e.target.value) : undefined;
-                    setState((s) => {
+                    setValue((s) => {
                       const next = [...s.components];
                       next[idx] = { ...next[idx], level: Number.isFinite(v as any) ? v : undefined };
                       return { ...s, components: next };
@@ -157,4 +158,4 @@ export function DroneComponentsEditor({ playerId }: { playerId: string }) {
       </div>
     </div>
   );
-      }
+              }
