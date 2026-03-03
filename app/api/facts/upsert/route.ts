@@ -15,8 +15,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function stripHistory(v: any) {
+  if (!v || typeof v !== "object") return v;
+  const copy: any = { ...v };
+  delete copy._history;
+  return copy;
+}
+
 function withHistory(nextValue: any, prevValue: any) {
-  // Keep your current convention: value contains _history array
   const at = nowIso();
 
   const prevHistory =
@@ -24,23 +30,14 @@ function withHistory(nextValue: any, prevValue: any) {
       ? prevValue._history
       : [];
 
-  const cleanedPrev = prevValue && typeof prevValue === "object"
-    ? (() => {
-        const copy = { ...prevValue };
-        // prevent nested _history growth like what you saw doubling
-        delete (copy as any)._history;
-        return copy;
-      })()
-    : prevValue;
+  const snapshot = stripHistory(prevValue);
 
-  const nextHistory = [
-    { at, value: cleanedPrev },
-    ...prevHistory,
-  ].slice(0, 50); // cap history growth
+  const nextHistory = [{ at, value: snapshot }, ...prevHistory].slice(0, 50);
 
   if (nextValue && typeof nextValue === "object") {
     return { ...nextValue, _history: nextHistory };
   }
+
   return { value: nextValue, _history: nextHistory };
 }
 
@@ -49,7 +46,7 @@ export async function POST(req: Request) {
 
   let body: UpsertBody;
   try {
-    body = await req.json();
+    body = (await req.json()) as UpsertBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -60,20 +57,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "domain and key are required" }, { status: 400 });
   }
 
-  // fetch previous (if any)
-  const prev = await supabase
+  // NOTE: We intentionally cast to any here so this route does NOT depend on Database types
+  // being perfectly in sync with your Supabase schema.
+  const prevRes: any = await (supabase as any)
     .from("facts")
     .select("id, value")
     .eq("key", key)
     .maybeSingle();
 
-  if (prev.error) {
-    return NextResponse.json({ error: prev.error.message }, { status: 500 });
+  if (prevRes?.error) {
+    return NextResponse.json({ error: prevRes.error.message ?? String(prevRes.error) }, { status: 500 });
   }
 
-  const mergedValue = prev.data?.value ? withHistory(value, prev.data.value) : value;
+  const prevValue = prevRes?.data?.value;
+  const mergedValue = prevValue ? withHistory(value, prevValue) : value;
 
-  const upsertRes = await supabase
+  const upRes: any = await (supabase as any)
     .from("facts")
     .upsert(
       {
@@ -83,16 +82,16 @@ export async function POST(req: Request) {
         status,
         confidence,
         source_urls,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso(),
       },
       { onConflict: "key" }
     )
     .select("*")
     .single();
 
-  if (upsertRes.error) {
-    return NextResponse.json({ error: upsertRes.error.message }, { status: 500 });
+  if (upRes?.error) {
+    return NextResponse.json({ error: upRes.error.message ?? String(upRes.error) }, { status: 500 });
   }
 
-  return NextResponse.json({ row: upsertRes.data });
+  return NextResponse.json({ row: upRes.data });
 }
