@@ -1,11 +1,9 @@
 // app/api/drone/combat_boost/save/route.ts
 import { NextResponse } from "next/server";
 
-import { DroneCombatBoostState } from "@/lib/drone/types";
-
 type SaveBody = {
-  player_id: string;
-  state: Omit<DroneCombatBoostState, "saved_at">;
+  owner_id: string;
+  value: any; // { kind:"drone_combat_boost", chip_sets:{...}, ... }
   source_urls?: string[];
 };
 
@@ -17,26 +15,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { player_id, state, source_urls = [] } = body;
+  const { owner_id, value, source_urls = [] } = body;
 
-  if (!player_id) return NextResponse.json({ error: "player_id is required" }, { status: 400 });
-  if (!state || state.kind !== "drone_combat_boost") {
-    return NextResponse.json({ error: "state.kind must be drone_combat_boost" }, { status: 400 });
+  if (!owner_id) return NextResponse.json({ error: "owner_id is required" }, { status: 400 });
+  if (!value || value.kind !== "drone_combat_boost") {
+    return NextResponse.json({ error: "value.kind must be drone_combat_boost" }, { status: 400 });
   }
 
-  const key = `${player_id}:drone:combat_boost`;
+  const key = `${owner_id}:drone:combat_boost`;
 
-  // Delegate to the generic facts upsert route so history behavior stays consistent everywhere.
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/facts/upsert`, {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+  const res = await fetch(`${baseUrl}/api/facts/upsert`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       domain: "drone",
       key,
-      value: {
-        ...state,
-        saved_at: new Date().toISOString(),
-      },
+      value,
       status: "confirmed",
       confidence: 1,
       source_urls,
@@ -44,9 +39,7 @@ export async function POST(req: Request) {
   });
 
   const json = await res.json();
-  if (!res.ok) {
-    return NextResponse.json({ error: json?.error ?? "Save failed" }, { status: res.status });
-  }
+  if (!res.ok) return NextResponse.json({ error: json?.error ?? "Save failed" }, { status: res.status });
 
   return NextResponse.json(json);
 }
