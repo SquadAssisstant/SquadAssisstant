@@ -5,18 +5,26 @@ export type AdminClient = ReturnType<typeof createClient<Database>>;
 
 let _client: AdminClient | null = null;
 
+function must(name: string, value?: string | null) {
+  if (!value) throw new Error(`${name} is missing`);
+  return value;
+}
+
 export function supabaseAdmin(): AdminClient {
   if (_client) return _client;
 
-  const url = process.env.SUPABASE_URL;
+  // Prefer server-only URL if you set it, otherwise fall back to the public one
+  const url =
+    process.env.SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url) throw new Error("SUPABASE_URL is missing");
-  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is missing");
-
-  _client = createClient<Database>(url, key, {
-    auth: { persistSession: false },
-  });
+  _client = createClient<Database>(
+    must("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)", url),
+    must("SUPABASE_SERVICE_ROLE_KEY", key),
+    { auth: { persistSession: false } }
+  );
 
   return _client;
 }
