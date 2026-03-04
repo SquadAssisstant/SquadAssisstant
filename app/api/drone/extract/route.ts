@@ -1,278 +1,143 @@
+// app/api/drone/extract/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { sessionCookieName, verifySession } from "@/lib/session";
 
-export const runtime = "nodejs";
+type Body = {
+  upload_id: number;
+  mode: "components" | "chips";
+  // optional: if you want later to pass troop_type selection hints
+  hint?: any;
+};
 
-function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
-  if (!cookieHeader) return undefined;
-  const parts = cookieHeader.split(";").map((p) => p.trim());
-  for (const p of parts) {
-    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
-  }
-  return undefined;
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} is missing`);
+  return v;
 }
 
-async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
-  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
-  if (!token) return null;
-  try {
-    const s: any = await verifySession(token);
-    return { profileId: String(s.profileId) };
-  } catch {
-    return null;
-  }
-}
-
-function clampStr(v: any, max = 200): string | null {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-  return s.length > max ? s.slice(0, max) : s;
+function asNumberLoose(s: string): number | null {
+  const n = Number(String(s).replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 export async function POST(req: Request) {
-  const sess = await requireSessionFromReq(req);
-  if (!sess) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-
-  const body = (await req.json().catch(() => null)) as { upload_id?: unknown } | null;
-  const uploadId = typeof body?.upload_id === "number" ? body.upload_id : Number(body?.upload_id);
-
-  if (!Number.isFinite(uploadId)) {
-    return NextResponse.json({ ok: false, error: "Missing/invalid upload_id" }, { status: 400 });
-  }
-
-  const sb: any = supabaseAdmin();
-
-  const up = await sb
-    .from("player_uploads")
-    .select("id, kind, storage_bucket, storage_path")
-    .eq("id", uploadId)
-    .eq("profile_id", sess.profileId)
-    .maybeSingle();
-
-  if (up.error) return NextResponse.json({ ok: false, error: up.error.message }, { status: 500 });
-  if (!up.data) return NextResponse.json({ ok: false, error: "Upload not found" }, { status: 404 });
-
-  const kind = String(up.data.kind || "");
-  if (kind !== "drone") {
-    return NextResponse.json(
-      { ok: false, error: `Upload kind must be "drone" (got "${kind}")` },
-      { status: 400 }
-    );
-  }
-
-  const bucket = up.data.storage_bucket || "uploads";
-  const path = String(up.data.storage_path || "");
-  if (!path) return NextResponse.json({ ok: false, error: "Upload has no storage_path" }, { status: 500 });
-
-  const signed = await sb.storage.from(bucket).createSignedUrl(path, 60 * 10);
-  if (signed.error) return NextResponse.json({ ok: false, error: signed.error.message }, { status: 500 });
-
-  const imageUrl: string = signed.data?.signedUrl;
-  if (!imageUrl) return NextResponse.json({ ok: false, error: "Could not sign image URL" }, { status: 500 });
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
-
-  const client = new OpenAI({ apiKey });
-
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      section: {
-        type: "string",
-        enum: ["attributes", "components", "extra_attributes", "combat_boost", "skill_chip", "unknown"],
-      },
-
-      // Common (when visible)
-      power_total: { type: ["integer", "null"] },
-      level: { type: ["integer", "null"] },
-
-      // Attributes screen
-      critical_upgrade_stage: { type: ["string", "null"] }, // e.g. "1/5"
-      attributes_panel: {
-        type: ["object", "null"],
-        additionalProperties: false,
-        properties: {
-          hp: {
-            type: ["object", "null"],
-            additionalProperties: false,
-            properties: {
-              from: { type: ["integer", "null"] },
-              to: { type: ["integer", "null"] },
-              pct: { type: ["number", "null"] },
-            },
-            required: ["from", "to", "pct"],
-          },
-          atk: {
-            type: ["object", "null"],
-            additionalProperties: false,
-            properties: {
-              from: { type: ["integer", "null"] },
-              to: { type: ["integer", "null"] },
-              pct: { type: ["number", "null"] },
-            },
-            required: ["from", "to", "pct"],
-          },
-          def: {
-            type: ["object", "null"],
-            additionalProperties: false,
-            properties: {
-              from: { type: ["integer", "null"] },
-              to: { type: ["integer", "null"] },
-              pct: { type: ["number", "null"] },
-            },
-            required: ["from", "to", "pct"],
-          },
-        },
-        required: ["hp", "atk", "def"],
-      },
-
-      // Components screen
-      components: {
-        type: ["array", "null"],
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            progress_pct: { type: ["integer", "null"] }, // 63
-            level: { type: ["integer", "null"] }, // 8
-          },
-          required: ["progress_pct", "level"],
-        },
-      },
-
-      // Extra attributes list
-      extra_attributes: {
-        type: ["array", "null"],
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            name: { type: "string" },
-            value_raw: { type: "string" }, // "+873287" or "1.00%"
-          },
-          required: ["name", "value_raw"],
-        },
-      },
-
-      // Combat boost screen
-      combat_boost: {
-        type: ["object", "null"],
-        additionalProperties: false,
-        properties: {
-          stage: { type: ["string", "null"] }, // "III"
-          level: { type: ["integer", "null"] }, // 368
-          xp_cur: { type: ["integer", "null"] },
-          xp_max: { type: ["integer", "null"] },
-          breakthrough_level: { type: ["integer", "null"] }, // 450
-          base_hp: { type: ["integer", "null"] }, // 589060
-          base_atk: { type: ["integer", "null"] }, // 14025
-          base_def: { type: ["integer", "null"] }, // 2805
-          chip_skill_boost: { type: ["integer", "null"] }, // +2
-        },
-        required: [
-          "stage",
-          "level",
-          "xp_cur",
-          "xp_max",
-          "breakthrough_level",
-          "base_hp",
-          "base_atk",
-          "base_def",
-          "chip_skill_boost",
-        ],
-      },
-
-      // Skill chip screen
-      skill_chip: {
-        type: ["object", "null"],
-        additionalProperties: false,
-        properties: {
-          set_name: { type: ["string", "null"] }, // "Tank Chip Set"
-          squad_power_raw: { type: ["string", "null"] }, // "39.57M"
-          preset_selected: { type: ["integer", "null"] }, // 1
-        },
-        required: ["set_name", "squad_power_raw", "preset_selected"],
-      },
-
-      notes: { type: ["string", "null"] },
-    },
-    required: [
-      "section",
-      "power_total",
-      "level",
-      "critical_upgrade_stage",
-      "attributes_panel",
-      "components",
-      "extra_attributes",
-      "combat_boost",
-      "skill_chip",
-      "notes",
-    ],
-  } as const;
-
+  let body: Body;
   try {
-    const resp = await client.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        {
-          role: "system",
-          content:
-            "You extract structured Drone data from a mobile game Tactical Drone screenshot. " +
-            "First classify the screenshot into a section: attributes, components, extra_attributes, combat_boost, skill_chip, or unknown. " +
-            "Then extract only the values visible on the screen. Return null for fields not visible. " +
-            "Return ONLY the JSON object matching the provided schema.",
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text:
-                "Extract Tactical Drone data. This screenshot is one of:\n" +
-                "- Attributes screen: power, level, critical upgrade stage, and the 3 rows (HP/ATK/DEF) with from→to and %.\n" +
-                "- Components screen: 6 component tiles showing progress % and level.\n" +
-                "- Extra Attributes list: capture each line name + value string (keep % or +flat).\n" +
-                "- Combat Boost screen: drone hp/atk/def, chip skill boost, stage, level, xp cur/max, breakthrough level.\n" +
-                "- Skill Chip screen: set name, squad power, preset selected.\n" +
-                "Classify section correctly and extract only what is visible.",
-            },
-            { type: "input_image", image_url: imageUrl, detail: "high" },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "drone_extract",
-          strict: true,
-          schema,
-        },
-      },
-      temperature: 0,
-    });
+    body = (await req.json()) as Body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
-    const raw = resp.output_text ?? "";
-    if (!raw) return NextResponse.json({ ok: false, error: "Model returned empty output" }, { status: 500 });
+  const { upload_id, mode } = body;
+  if (!upload_id) return NextResponse.json({ error: "upload_id is required" }, { status: 400 });
+  if (mode !== "components" && mode !== "chips") {
+    return NextResponse.json({ error: "mode must be components or chips" }, { status: 400 });
+  }
 
-    const parsed = JSON.parse(raw);
+  // 1) Ask your backend for the public image URL for this upload
+  const detailsRes = await fetch(
+    `${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/drone/details?upload_id=${encodeURIComponent(upload_id)}`,
+    { method: "GET" }
+  );
 
-    // Add upload_id so save can link sources
-    return NextResponse.json({
-      ok: true,
-      extracted: {
-        ...parsed,
-        notes: clampStr(parsed?.notes, 500),
-        source_upload_id: uploadId,
-      },
-    });
-  } catch (e: any) {
+  const detailsJson = await detailsRes.json().catch(() => null);
+  if (!detailsRes.ok) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "Extract failed", debug: { name: e?.name, code: e?.code } },
+      { error: detailsJson?.error ?? `Failed to fetch drone details (HTTP ${detailsRes.status})` },
       { status: 500 }
     );
   }
+
+  const imageUrl = detailsJson?.image_url as string | undefined;
+  if (!imageUrl) {
+    return NextResponse.json({ error: "No image_url found for upload" }, { status: 404 });
+  }
+
+  const client = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
+
+  // 2) Vision extraction prompt — tuned to your UI screenshots
+  const prompt =
+    mode === "components"
+      ? `You are extracting data from a mobile game screenshot showing "Drone Components".
+Return STRICT JSON only.
+Goal: Extract component tiles values: percent and level.
+Output schema:
+{
+  "kind": "drone_components_extracted",
+  "components": [
+    {"label": string, "percent": number|null, "level": number|null}
+  ]
+}
+Rules:
+- components should be in the order shown on screen (top-left to bottom-right).
+- percent is the percent value shown like "63%".
+- level is the number shown like "Lv.8" -> 8.
+- If a value is not visible, set it to null.
+Return JSON only.`
+      : `You are extracting data from a mobile game screenshot showing Drone Skill Chips / Chip Set.
+Return STRICT JSON only.
+Goal: Extract troop type label if visible (Tank/Air/Missile) and the 4 chip skill names and squad power if visible.
+Output schema:
+{
+  "kind": "drone_chipset_extracted",
+  "troop_type": "tank"|"air"|"missile"|null,
+  "displayed_squad_power": string|null,
+  "skills": {
+    "initial_move": {"name": string|null, "chip_power": number|null} | null,
+    "offensive": {"name": string|null, "chip_power": number|null} | null,
+    "defense": {"name": string|null, "chip_power": number|null} | null,
+    "interference": {"name": string|null, "chip_power": number|null} | null
+  }
+}
+Rules:
+- If chip power isn't visible in this screenshot, set chip_power to null.
+- If a name isn't readable, set name to null.
+Return JSON only.`;
+
+  // Using Responses API (works with image_url as a string)
+  const resp = await client.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: prompt },
+          { type: "input_image", image_url: imageUrl, detail: "low" },
+        ],
+      },
+    ],
+  });
+
+  const text = resp.output_text?.trim() || "";
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // If model returned extra text, try to salvage JSON
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        parsed = JSON.parse(text.slice(start, end + 1));
+      } catch {}
     }
+  }
+
+  if (!parsed) {
+    return NextResponse.json(
+      { error: "Extraction failed: model did not return valid JSON", raw: text.slice(0, 500) },
+      { status: 500 }
+    );
+  }
+
+  // light normalization
+  if (mode === "components" && Array.isArray(parsed.components)) {
+    parsed.components = parsed.components.map((c: any) => ({
+      label: typeof c?.label === "string" ? c.label : "",
+      percent: c?.percent == null ? null : asNumberLoose(String(c.percent)),
+      level: c?.level == null ? null : asNumberLoose(String(c.level)),
+    }));
+  }
+
+  return NextResponse.json({ ok: true, upload_id, image_url: imageUrl, extracted: parsed });
+}
