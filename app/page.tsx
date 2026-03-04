@@ -1150,7 +1150,10 @@ export default function Home() {
 
           {droneTab === "components" ? (
             droneOwnerId ? (
-              <DroneComponentsEditor ownerId={droneOwnerId} />
+              <DroneComponentsEditor
+                ownerId={droneOwnerId}
+                selectedUploadId={selectedDroneUploadId}
+              />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
                 Select a drone screenshot first so we can derive your owner id.
@@ -1160,7 +1163,10 @@ export default function Home() {
 
           {droneTab === "combat_boost" || droneTab === "chips" ? (
             droneOwnerId ? (
-              <DroneCombatBoostEditor ownerId={droneOwnerId} />
+              <DroneCombatBoostEditor
+                ownerId={droneOwnerId}
+                selectedUploadId={selectedDroneUploadId}
+              />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
                 Select a drone screenshot first so we can derive your owner id.
@@ -1258,4 +1264,4 @@ export default function Home() {
       </ModalShell>
     </div>
   );
-}
+    }
