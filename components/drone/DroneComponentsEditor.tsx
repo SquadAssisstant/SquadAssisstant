@@ -1,9 +1,10 @@
+// components/drone/DroneComponentsEditor.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 
 type DroneComponent = {
-  key: string;     // supports 5 or 6 without changing schema
+  key: string;
   label?: string;
   percent?: number;
   level?: number;
@@ -25,10 +26,18 @@ function prettyKey(k: string) {
 
 const DEFAULT_KEYS = ["component_1", "component_2", "component_3", "component_4", "component_5", "component_6"];
 
-export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
+export function DroneComponentsEditor({
+  ownerId,
+  selectedUploadId,
+}: {
+  ownerId: string;
+  selectedUploadId: number | null;
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const [value, setValue] = useState<DroneComponentsValue>(() => ({
     kind: "drone_components",
@@ -39,8 +48,11 @@ export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
   async function load() {
     setLoading(true);
     setErr(null);
+    setMsg(null);
     try {
-      const res = await fetch(`/api/drone/components/get?owner_id=${encodeURIComponent(ownerId)}`, { credentials: "include" });
+      const res = await fetch(`/api/drone/components/get?owner_id=${encodeURIComponent(ownerId)}`, {
+        credentials: "include",
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Load failed");
 
@@ -57,6 +69,7 @@ export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
   async function save() {
     setSaving(true);
     setErr(null);
+    setMsg(null);
     try {
       const res = await fetch(`/api/drone/components/save`, {
         method: "POST",
@@ -74,10 +87,59 @@ export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
       if (json?.row?.value?.kind === "drone_components") {
         setValue(json.row.value as DroneComponentsValue);
       }
+      setMsg("Saved ✅");
     } catch (e: any) {
       setErr(e?.message ?? "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function extract() {
+    if (!selectedUploadId) {
+      setErr("Select a drone screenshot first.");
+      return;
+    }
+    setExtracting(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/drone/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ upload_id: selectedUploadId, mode: "components" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Extract failed");
+
+      const extracted = json?.extracted;
+      const arr = Array.isArray(extracted?.components) ? extracted.components : [];
+
+      if (!arr.length) {
+        setErr("Extract returned no components. Try a clearer screenshot.");
+        return;
+      }
+
+      // Map extracted list into our fixed keys in order
+      setValue((s) => {
+        const next = [...s.components];
+        for (let i = 0; i < next.length && i < arr.length; i++) {
+          next[i] = {
+            ...next[i],
+            label: arr[i]?.label || next[i].label,
+            percent: typeof arr[i]?.percent === "number" ? arr[i].percent : next[i].percent,
+            level: typeof arr[i]?.level === "number" ? arr[i].level : next[i].level,
+          };
+        }
+        return { ...s, components: next };
+      });
+
+      setMsg("Extracted ✅ (review, then Save)");
+    } catch (e: any) {
+      setErr(e?.message ?? "Extract failed");
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -93,10 +155,20 @@ export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
       {err ? (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{err}</div>
       ) : null}
+      {msg ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{msg}</div>
+      ) : null}
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-white/70">Enter the % and Lv shown on each component tile.</div>
         <div className="flex gap-2">
+          <button
+            onClick={extract}
+            disabled={extracting || !selectedUploadId}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+          >
+            {extracting ? "Extracting…" : "Extract from Image"}
+          </button>
           <button
             onClick={load}
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
@@ -158,4 +230,4 @@ export function DroneComponentsEditor({ ownerId }: { ownerId: string }) {
       </div>
     </div>
   );
-              }
+            }
