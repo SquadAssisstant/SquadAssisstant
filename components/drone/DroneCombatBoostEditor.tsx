@@ -1,3 +1,4 @@
+// components/drone/DroneCombatBoostEditor.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -47,8 +48,8 @@ function prettySkill(t: ChipSkillType) {
   return "Interference";
 }
 
-function defaultSkill(troop_type: TroopType, skill_type: ChipSkillType, name: string, description: string): ChipSkill {
-  return { troop_type, skill_type, name, description };
+function defaultSkill(troop_type: TroopType, skill_type: ChipSkillType, name: string): ChipSkill {
+  return { troop_type, skill_type, name, description: "" };
 }
 
 function defaultSet(troop_type: TroopType): ChipSet {
@@ -58,10 +59,10 @@ function defaultSet(troop_type: TroopType): ChipSet {
       label: "Tank Chip Set",
       assigned_squad_slot: null,
       skills: {
-        initial_move: defaultSkill("tank", "initial_move", "Absolute Quantum Field (Tank)", ""),
-        offensive: defaultSkill("tank", "offensive", "Lethal Firestorm (Tank)", ""),
-        defense: defaultSkill("tank", "defense", "Gravitational Resonance Armor (Tank)", ""),
-        interference: defaultSkill("tank", "interference", "Memory Ultra Fission (Tank)", ""),
+        initial_move: defaultSkill("tank", "initial_move", "Absolute Quantum Field (Tank)"),
+        offensive: defaultSkill("tank", "offensive", "Lethal Firestorm (Tank)"),
+        defense: defaultSkill("tank", "defense", "Gravitational Resonance Armor (Tank)"),
+        interference: defaultSkill("tank", "interference", "Memory Ultra Fission (Tank)"),
       },
     };
   }
@@ -71,18 +72,26 @@ function defaultSet(troop_type: TroopType): ChipSet {
     label: `${prettyTroop(troop_type)} Chip Set`,
     assigned_squad_slot: null,
     skills: {
-      initial_move: defaultSkill(troop_type, "initial_move", `Initial Move (${prettyTroop(troop_type)})`, ""),
-      offensive: defaultSkill(troop_type, "offensive", `Offensive (${prettyTroop(troop_type)})`, ""),
-      defense: defaultSkill(troop_type, "defense", `Defense (${prettyTroop(troop_type)})`, ""),
-      interference: defaultSkill(troop_type, "interference", `Interference (${prettyTroop(troop_type)})`, ""),
+      initial_move: defaultSkill(troop_type, "initial_move", `Initial Move (${prettyTroop(troop_type)})`),
+      offensive: defaultSkill(troop_type, "offensive", `Offensive (${prettyTroop(troop_type)})`),
+      defense: defaultSkill(troop_type, "defense", `Defense (${prettyTroop(troop_type)})`),
+      interference: defaultSkill(troop_type, "interference", `Interference (${prettyTroop(troop_type)})`),
     },
   };
 }
 
-export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
+export function DroneCombatBoostEditor({
+  ownerId,
+  selectedUploadId,
+}: {
+  ownerId: string;
+  selectedUploadId: number | null;
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const [value, setValue] = useState<CombatBoostValue>(() => ({
     kind: "drone_combat_boost",
@@ -97,8 +106,11 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
   async function load() {
     setLoading(true);
     setErr(null);
+    setMsg(null);
     try {
-      const res = await fetch(`/api/drone/combat_boost/get?owner_id=${encodeURIComponent(ownerId)}`, { credentials: "include" });
+      const res = await fetch(`/api/drone/combat_boost/get?owner_id=${encodeURIComponent(ownerId)}`, {
+        credentials: "include",
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Load failed");
       if (json?.row?.value?.kind === "drone_combat_boost") {
@@ -114,6 +126,7 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
   async function save() {
     setSaving(true);
     setErr(null);
+    setMsg(null);
     try {
       const res = await fetch(`/api/drone/combat_boost/save`, {
         method: "POST",
@@ -130,10 +143,75 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
       if (json?.row?.value?.kind === "drone_combat_boost") {
         setValue(json.row.value as CombatBoostValue);
       }
+      setMsg("Saved ✅");
     } catch (e: any) {
       setErr(e?.message ?? "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function extract() {
+    if (!selectedUploadId) {
+      setErr("Select a drone screenshot first.");
+      return;
+    }
+    setExtracting(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/drone/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ upload_id: selectedUploadId, mode: "chips" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Extract failed");
+
+      const ex = json?.extracted;
+      if (!ex || ex.kind !== "drone_chipset_extracted") {
+        setErr("Extract returned unexpected format.");
+        return;
+      }
+
+      // determine troop type if visible; otherwise keep as-is
+      const tt: TroopType | null = ex.troop_type ?? null;
+
+      setValue((s) => {
+        const next = { ...s, chip_sets: { ...s.chip_sets } };
+
+        const targetTroop: TroopType = tt ?? "tank"; // default bucket if unknown
+        const set = next.chip_sets[targetTroop] ?? defaultSet(targetTroop);
+
+        const skills = { ...set.skills };
+
+        for (const k of ["initial_move", "offensive", "defense", "interference"] as const) {
+          const got = ex.skills?.[k];
+          if (!got) continue;
+
+          const prev = skills[k] ?? defaultSkill(targetTroop, k, "");
+          skills[k] = {
+            ...prev,
+            name: got?.name ?? prev.name,
+            chip_power: typeof got?.chip_power === "number" ? got.chip_power : prev.chip_power,
+          };
+        }
+
+        next.chip_sets[targetTroop] = {
+          ...set,
+          displayed_squad_power: ex.displayed_squad_power ?? set.displayed_squad_power,
+          skills,
+        };
+
+        return next;
+      });
+
+      setMsg("Extracted ✅ (review, then Save)");
+    } catch (e: any) {
+      setErr(e?.message ?? "Extract failed");
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -161,12 +239,22 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
       {err ? (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{err}</div>
       ) : null}
+      {msg ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{msg}</div>
+      ) : null}
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-white/70">
           Assign each troop-type chip set to the squad slot you use in-game (dropdown per squad).
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={extract}
+            disabled={extracting || !selectedUploadId}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+          >
+            {extracting ? "Extracting…" : "Extract from Image"}
+          </button>
           <button
             onClick={load}
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
@@ -193,6 +281,8 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
               <div>
                 <div className="text-lg font-semibold text-white">{prettyTroop(tt)} Chip Set</div>
                 <div className="text-sm text-white/60">
+                  {set.displayed_squad_power ? `Squad Power: ${set.displayed_squad_power}` : "Squad Power: —"}
+                  <span className="mx-2 text-white/30">•</span>
                   {slot
                     ? `Assigned to Squad Slot ${slot}${assignedMap[slot] && assignedMap[slot]!.length > 1 ? " (⚠️ multiple sets assigned)" : ""}`
                     : "Not assigned"}
@@ -260,15 +350,12 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
                               ...s.chip_sets,
                               [tt]: {
                                 ...s.chip_sets[tt],
-                                skills: {
-                                  ...s.chip_sets[tt].skills,
-                                  [skillType]: { ...skill, chip_power: Number.isFinite(n as any) ? n : undefined },
-                                },
+                                skills: { ...s.chip_sets[tt].skills, [skillType]: { ...skill, chip_power: Number.isFinite(n as any) ? n : undefined } },
                               },
                             },
                           }));
                         }}
-                        placeholder="Chip power (e.g., 155100)"
+                        placeholder="Chip power (if known)"
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
 
@@ -287,7 +374,7 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
                             },
                           }));
                         }}
-                        placeholder="Chip effect text (later we can add Extract from Image)"
+                        placeholder="Effect text (optional for now)"
                         rows={4}
                         className="w-full resize-none rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
@@ -301,4 +388,4 @@ export function DroneCombatBoostEditor({ ownerId }: { ownerId: string }) {
       })}
     </div>
   );
-}
+                             }
