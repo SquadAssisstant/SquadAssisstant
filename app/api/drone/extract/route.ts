@@ -2,6 +2,8 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
+export const runtime = "nodejs";
+
 type Body = {
   upload_id: number;
   mode: "components" | "chips";
@@ -22,12 +24,8 @@ function asNumberLoose(value: unknown): number | null {
 
 function getBaseUrl(req: Request) {
   const envBase = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  if (envBase) {
-    return envBase.replace(/\/+$/, "");
-  }
-
-  const url = new URL(req.url);
-  return url.origin;
+  if (envBase) return envBase.replace(/\/+$/, "");
+  return new URL(req.url).origin;
 }
 
 async function readJsonFromResponse(res: Response) {
@@ -103,7 +101,9 @@ export async function POST(req: Request) {
     }
 
     const baseUrl = getBaseUrl(req);
-    const detailsUrl = `${baseUrl}/api/drone/details?upload_id=${encodeURIComponent(String(upload_id))}`;
+    const detailsUrl = `${baseUrl}/api/drone/details?upload_id=${encodeURIComponent(
+      String(upload_id)
+    )}`;
 
     let detailsRes: Response;
     try {
@@ -111,6 +111,7 @@ export async function POST(req: Request) {
         method: "GET",
         headers: {
           Accept: "application/json",
+          cookie: req.headers.get("cookie") ?? "",
         },
         cache: "no-store",
       });
@@ -134,6 +135,7 @@ export async function POST(req: Request) {
             detailsParsed.data?.error ??
             detailsParsed.error ??
             `Failed to fetch drone details (HTTP ${detailsRes.status})`,
+          status: detailsRes.status,
           details_url: detailsUrl,
           raw:
             typeof detailsParsed.rawText === "string"
@@ -177,9 +179,8 @@ export async function POST(req: Request) {
 
     const prompt =
       mode === "components"
-        ? `You are extracting data from a mobile game screenshot showing "Drone Components".
+        ? `You are extracting data from a mobile game screenshot showing drone components.
 Return STRICT JSON only.
-Goal: Extract the 6 component tiles shown on screen.
 
 Output schema:
 {
@@ -191,16 +192,14 @@ Output schema:
 
 Rules:
 - Return exactly 6 components whenever possible.
-- Keep components in the order shown on screen, top-left to bottom-right.
-- "percent" is the progress percent shown like "63%".
-- "level" is the value shown like "Lv.8" -> 8.
-- If a label is unclear, still include a best short label or empty string.
-- If a value is not visible, set it to null.
+- Keep them in on-screen order from top-left to bottom-right.
+- "percent" is the progress percent shown like 63%.
+- "level" is the value shown like Lv.8 -> 8.
+- If a label is unclear, provide the best short label you can.
+- If a value is unreadable, return null.
 - Return JSON only.`
-        : `You are extracting data from a mobile game screenshot showing Drone Skill Chips / Chip Set.
+        : `You are extracting data from a mobile game screenshot showing drone skill chips / chip set.
 Return STRICT JSON only.
-
-Goal: Extract troop type label if visible (Tank/Air/Missile), the displayed squad power if visible, and the 4 chip skill slots.
 
 Output schema:
 {
@@ -216,8 +215,8 @@ Output schema:
 }
 
 Rules:
-- If chip power is not visible, set chip_power to null.
-- If a chip name is unreadable, set name to null.
+- If chip power is not visible, return null.
+- If chip name is unreadable, return null.
 - Map the visible four slots to:
   initial_move, offensive, defense, interference.
 - Return JSON only.`;
@@ -250,9 +249,12 @@ Rules:
     }
 
     if (mode === "components") {
-      const inputComponents = Array.isArray(parsed.components) ? parsed.components : [];
-      parsed.kind = "drone_components_extracted";
-      parsed.components = inputComponents.map((c: any) => ({
+      const inputComponents = Array.isArray((parsed as any).components)
+        ? (parsed as any).components
+        : [];
+
+      (parsed as any).kind = "drone_components_extracted";
+      (parsed as any).components = inputComponents.map((c: any) => ({
         label: typeof c?.label === "string" ? c.label : "",
         percent: c?.percent == null ? null : asNumberLoose(c.percent),
         level: c?.level == null ? null : asNumberLoose(c.level),
@@ -260,21 +262,22 @@ Rules:
     }
 
     if (mode === "chips") {
-      const skills = parsed?.skills ?? {};
-      parsed.kind = "drone_chipset_extracted";
-      parsed.troop_type =
-        parsed?.troop_type === "tank" ||
-        parsed?.troop_type === "air" ||
-        parsed?.troop_type === "missile"
-          ? parsed.troop_type
+      const skills = (parsed as any)?.skills ?? {};
+
+      (parsed as any).kind = "drone_chipset_extracted";
+      (parsed as any).troop_type =
+        (parsed as any)?.troop_type === "tank" ||
+        (parsed as any)?.troop_type === "air" ||
+        (parsed as any)?.troop_type === "missile"
+          ? (parsed as any).troop_type
           : null;
 
-      parsed.displayed_squad_power =
-        typeof parsed?.displayed_squad_power === "string"
-          ? parsed.displayed_squad_power
+      (parsed as any).displayed_squad_power =
+        typeof (parsed as any)?.displayed_squad_power === "string"
+          ? (parsed as any).displayed_squad_power
           : null;
 
-      parsed.skills = {
+      (parsed as any).skills = {
         initial_move: skills?.initial_move
           ? {
               name:
