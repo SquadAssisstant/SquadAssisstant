@@ -1,6 +1,8 @@
 // app/api/drone/extract/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { sessionCookieName, verifySession } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -16,45 +18,33 @@ function mustEnv(name: string) {
   return v;
 }
 
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(";").map((p) => p.trim());
+  for (const p of parts) {
+    if (p.startsWith(name + "=")) {
+      return decodeURIComponent(p.slice(name.length + 1));
+    }
+  }
+  return undefined;
+}
+
+async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
+  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
+  if (!token) return null;
+
+  try {
+    const s: any = await verifySession(token);
+    return { profileId: String(s.profileId) };
+  } catch {
+    return null;
+  }
+}
+
 function asNumberLoose(value: unknown): number | null {
   if (value == null) return null;
   const n = Number(String(value).replace(/[^\d.]/g, ""));
   return Number.isFinite(n) ? n : null;
-}
-
-function getBaseUrl(req: Request) {
-  const envBase = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  if (envBase) return envBase.replace(/\/+$/, "");
-  return new URL(req.url).origin;
-}
-
-async function readJsonFromResponse(res: Response) {
-  const text = await res.text();
-
-  if (!text || !text.trim()) {
-    return {
-      ok: false,
-      data: null as any,
-      rawText: text,
-      error: `Empty response body (${res.status} ${res.statusText})`,
-    };
-  }
-
-  try {
-    return {
-      ok: true,
-      data: JSON.parse(text),
-      rawText: text,
-      error: null,
-    };
-  } catch {
-    return {
-      ok: false,
-      data: null as any,
-      rawText: text,
-      error: `Response was not valid JSON (${res.status} ${res.statusText})`,
-    };
-  }
 }
 
 function extractJsonObject(text: string) {
@@ -77,6 +67,76 @@ function extractJsonObject(text: string) {
   return null;
 }
 
+async function getSignedImageUrlForUpload(req: Request, uploadId: number) {
+  const sess = await requireSessionFromReq(req);
+  if (!sess) {
+    return {
+      ok: false as const,
+      status: 401,
+      error: "Unauthorized",
+      image_url: null,
+    };
+  }
+
+  const sb: any = supabaseAdmin();
+
+  const up = await sb
+    .from("player_uploads")
+    .select("id, kind, storage_bucket, storage_path, profile_id")
+    .eq("id", uploadId)
+    .eq("profile_id", sess.profileId)
+    .maybeSingle();
+
+  if (up.error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: up.error.message || "Failed to load upload",
+      image_url: null,
+    };
+  }
+
+  if (!up.data) {
+    return {
+      ok: false as const,
+      status: 404,
+      error: "Upload not found",
+      image_url: null,
+    };
+  }
+
+  const bucket = up.data.storage_bucket || "uploads";
+  const path = String(up.data.storage_path || "");
+
+  if (!path) {
+    return {
+      ok: false as const,
+      status: 404,
+      error: "Upload has no storage path",
+      image_url: null,
+    };
+  }
+
+  const signed = await sb.storage.from(bucket).createSignedUrl(path, 60 * 60);
+
+  if (signed.error || !signed.data?.signedUrl) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: signed.error?.message || "Failed to create signed URL",
+      image_url: null,
+    };
+  }
+
+  return {
+    ok: true as const,
+    status: 200,
+    error: null,
+    image_url: signed.data.signedUrl,
+    upload: up.data,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     let body: Body;
@@ -93,6 +153,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "upload_id is required" }, { status: 400 });
     }
 
+    if (!Number.isFinite(Number(upload_id))) {
+      return NextResponse.json({ error: "upload_id must be a number" }, { status: 400 });
+    }
+
     if (mode !== "components" && mode !== "chips") {
       return NextResponse.json(
         { error: "mode must be components or chips" },
@@ -100,78 +164,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const baseUrl = getBaseUrl(req);
-    const detailsUrl = `${baseUrl}/api/drone/details?upload_id=${encodeURIComponent(
-      String(upload_id)
-    )}`;
+    const signedLookup = await getSignedImageUrlForUpload(req, Number(upload_id));
 
-    let detailsRes: Response;
-    try {
-      detailsRes = await fetch(detailsUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          cookie: req.headers.get("cookie") ?? "",
-        },
-        cache: "no-store",
-      });
-    } catch (error: any) {
+    if (!signedLookup.ok || !signedLookup.image_url) {
       return NextResponse.json(
         {
-          error: "Failed to fetch drone details endpoint",
-          details: error?.message ?? "Unknown fetch error",
-          details_url: detailsUrl,
+          error: signedLookup.error || "Failed to get image URL",
         },
-        { status: 500 }
+        { status: signedLookup.status || 500 }
       );
     }
 
-    const detailsParsed = await readJsonFromResponse(detailsRes);
-
-    if (!detailsRes.ok) {
-      return NextResponse.json(
-        {
-          error:
-            detailsParsed.data?.error ??
-            detailsParsed.error ??
-            `Failed to fetch drone details (HTTP ${detailsRes.status})`,
-          status: detailsRes.status,
-          details_url: detailsUrl,
-          raw:
-            typeof detailsParsed.rawText === "string"
-              ? detailsParsed.rawText.slice(0, 500)
-              : "",
-        },
-        { status: 500 }
-      );
-    }
-
-    if (!detailsParsed.data) {
-      return NextResponse.json(
-        {
-          error: detailsParsed.error ?? "Drone details returned invalid JSON",
-          details_url: detailsUrl,
-          raw:
-            typeof detailsParsed.rawText === "string"
-              ? detailsParsed.rawText.slice(0, 500)
-              : "",
-        },
-        { status: 500 }
-      );
-    }
-
-    const imageUrl = detailsParsed.data?.image_url as string | undefined;
-
-    if (!imageUrl || typeof imageUrl !== "string") {
-      return NextResponse.json(
-        {
-          error: "No image_url found for upload",
-          details_url: detailsUrl,
-          details_response: detailsParsed.data,
-        },
-        { status: 404 }
-      );
-    }
+    const imageUrl = signedLookup.image_url;
 
     const client = new OpenAI({
       apiKey: mustEnv("OPENAI_API_KEY"),
@@ -192,7 +196,7 @@ Output schema:
 
 Rules:
 - Return exactly 6 components whenever possible.
-- Keep them in on-screen order from top-left to bottom-right.
+- Keep them in the visible on-screen order from top-left to bottom-right.
 - "percent" is the progress percent shown like 63%.
 - "level" is the value shown like Lv.8 -> 8.
 - If a label is unclear, provide the best short label you can.
@@ -228,7 +232,7 @@ Rules:
           role: "user",
           content: [
             { type: "input_text", text: prompt },
-            { type: "input_image", image_url: imageUrl, detail: "low" },
+            { type: "input_image", image_url: imageUrl, detail: "high" },
           ],
         },
       ],
@@ -331,4 +335,4 @@ Rules:
       { status: 500 }
     );
   }
-}
+       }
