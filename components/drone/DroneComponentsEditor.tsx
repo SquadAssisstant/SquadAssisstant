@@ -1,159 +1,98 @@
-// components/drone/DroneComponentsEditor.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 
 type DroneComponent = {
-  key: string;
-  label?: string;
-  percent?: number;
-  level?: number;
+  slot: number;
+  label: string | null;
+  percent: number | null;
+  level: number | null;
 };
 
 type DroneComponentsValue = {
   kind: "drone_components";
   components: DroneComponent[];
-  saved_at: string;
+  source_upload_id?: number;
+  saved_at?: string;
 };
 
-function nowIso() {
-  return new Date().toISOString();
+function blankValue(): DroneComponentsValue {
+  return {
+    kind: "drone_components",
+    components: Array.from({ length: 6 }, (_, idx) => ({
+      slot: idx + 1,
+      label: null,
+      percent: null,
+      level: null,
+    })),
+  };
 }
 
-function prettyKey(k: string) {
-  return k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-const DEFAULT_KEYS = [
-  "component_1",
-  "component_2",
-  "component_3",
-  "component_4",
-  "component_5",
-  "component_6",
-];
-
-async function readJsonSafely(res: Response) {
-  const text = await res.text();
-
-  if (!text || !text.trim()) {
-    return {
-      ok: false,
-      status: res.status,
-      statusText: res.statusText,
-      error: `Empty response body (${res.status} ${res.statusText})`,
-      rawText: text,
-      data: null,
-    };
-  }
+async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
+  const text = await res.text().catch(() => "");
+  if (!text) return { json: null, text: null };
 
   try {
-    const data = JSON.parse(text);
-    return {
-      ok: res.ok,
-      status: res.status,
-      statusText: res.statusText,
-      error: null,
-      rawText: text,
-      data,
-    };
+    return { json: JSON.parse(text), text };
   } catch {
-    return {
-      ok: false,
-      status: res.status,
-      statusText: res.statusText,
-      error: `Response was not valid JSON (${res.status} ${res.statusText})`,
-      rawText: text,
-      data: null,
-    };
+    return { json: null, text };
   }
 }
 
 export function DroneComponentsEditor({
-  ownerId,
   selectedUploadId,
 }: {
-  ownerId: string;
+  ownerId?: string;
   selectedUploadId: number | null;
 }) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-
-  const [value, setValue] = useState<DroneComponentsValue>(() => ({
-    kind: "drone_components",
-    saved_at: nowIso(),
-    components: DEFAULT_KEYS.map((k) => ({ key: k, label: prettyKey(k) })),
-  }));
+  const [value, setValue] = useState<DroneComponentsValue>(blankValue());
 
   async function load() {
+    if (!selectedUploadId) {
+      setValue(blankValue());
+      return;
+    }
+
     setLoading(true);
     setErr(null);
     setMsg(null);
 
     try {
-      const res = await fetch(`/api/drone/components/get?owner_id=${encodeURIComponent(ownerId)}`, {
+      const res = await fetch(`/api/drone/components/details?upload_id=${selectedUploadId}`, {
         credentials: "include",
       });
 
-      const parsed = await readJsonSafely(res);
+      const payload = await safeReadResponse(res);
 
-      if (!parsed.data) {
-        throw new Error(parsed.error ?? "Load failed");
+      if (!res.ok) {
+        const serverMsg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setErr(`Load failed: ${String(serverMsg)}`);
+        return;
       }
 
-      if (!parsed.ok) {
-        throw new Error(parsed.data?.error ?? parsed.error ?? "Load failed");
-      }
-
-      if (parsed.data?.row?.value?.kind === "drone_components") {
-        setValue(parsed.data.row.value as DroneComponentsValue);
+      const factsValue = payload.json?.facts?.value;
+      if (factsValue?.kind === "drone_components" && Array.isArray(factsValue.components)) {
+        setValue({
+          kind: "drone_components",
+          components: factsValue.components,
+          source_upload_id: factsValue.source_upload_id ?? selectedUploadId,
+          saved_at: factsValue.saved_at,
+        });
+      } else {
+        setValue({
+          ...blankValue(),
+          source_upload_id: selectedUploadId,
+        });
       }
     } catch (e: any) {
-      setErr(e?.message ?? "Load failed");
+      setErr(`Load failed: ${e?.message ?? "unknown"}`);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function save() {
-    setSaving(true);
-    setErr(null);
-    setMsg(null);
-
-    try {
-      const res = await fetch(`/api/drone/components/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          owner_id: ownerId,
-          value: { ...value, saved_at: nowIso() },
-          source_urls: [],
-        }),
-      });
-
-      const parsed = await readJsonSafely(res);
-
-      if (!parsed.data) {
-        throw new Error(parsed.error ?? "Save failed");
-      }
-
-      if (!parsed.ok) {
-        throw new Error(parsed.data?.error ?? parsed.error ?? "Save failed");
-      }
-
-      if (parsed.data?.row?.value?.kind === "drone_components") {
-        setValue(parsed.data.row.value as DroneComponentsValue);
-      }
-
-      setMsg("Saved ✅");
-    } catch (e: any) {
-      setErr(e?.message ?? "Save failed");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -168,110 +107,113 @@ export function DroneComponentsEditor({
     setMsg(null);
 
     try {
-      const res = await fetch("/api/drone/extract", {
+      const res = await fetch("/api/drone/components/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ upload_id: selectedUploadId, mode: "components" }),
+        body: JSON.stringify({ upload_id: selectedUploadId }),
       });
 
-      const parsed = await readJsonSafely(res);
+      const payload = await safeReadResponse(res);
 
-      if (!parsed.data) {
-        const preview = parsed.rawText?.slice(0, 300);
-        throw new Error(
-          preview
-            ? `${parsed.error ?? "Extract failed"}: ${preview}`
-            : (parsed.error ?? "Extract failed")
-        );
-      }
-
-      if (!parsed.ok) {
-        throw new Error(parsed.data?.error ?? parsed.error ?? "Extract failed");
-      }
-
-      const extracted = parsed.data?.extracted;
-      const arr = Array.isArray(extracted?.components) ? extracted.components : [];
-
-      if (!arr.length) {
-        setErr("Extract returned no components. Try a clearer screenshot.");
+      if (!res.ok) {
+        const serverMsg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setErr(`Extract failed: ${String(serverMsg)}`);
         return;
       }
 
-      setValue((s) => {
-        const next = [...s.components];
+      const extracted = payload.json?.extracted;
+      if (!extracted || extracted.kind !== "drone_components") {
+        setErr("Extract returned unexpected format.");
+        return;
+      }
 
-        for (let i = 0; i < next.length && i < arr.length; i++) {
-          next[i] = {
-            ...next[i],
-            label: arr[i]?.label || next[i].label,
-            percent: typeof arr[i]?.percent === "number" ? arr[i].percent : next[i].percent,
-            level: typeof arr[i]?.level === "number" ? arr[i].level : next[i].level,
-          };
-        }
-
-        return {
-          ...s,
-          saved_at: nowIso(),
-          components: next,
-        };
+      setValue({
+        kind: "drone_components",
+        components: Array.isArray(extracted.components) ? extracted.components : blankValue().components,
+        source_upload_id: extracted.source_upload_id ?? selectedUploadId,
+        saved_at: extracted.saved_at,
       });
 
-      setMsg("Extracted ✅ (review, then Save)");
+      setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
-      setErr(e?.message ?? "Extract failed");
+      setErr(`Extract failed: ${e?.message ?? "unknown"}`);
     } finally {
       setExtracting(false);
     }
   }
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerId]);
+  async function save() {
+    if (!selectedUploadId) {
+      setErr("Select a drone screenshot first.");
+      return;
+    }
 
-  if (loading) {
-    return <div className="text-sm text-white/60">Loading components…</div>;
+    setSaving(true);
+    setErr(null);
+    setMsg(null);
+
+    try {
+      const res = await fetch("/api/drone/components/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          upload_id: selectedUploadId,
+          value: {
+            kind: "drone_components",
+            components: value.components,
+          },
+        }),
+      });
+
+      const payload = await safeReadResponse(res);
+
+      if (!res.ok) {
+        const serverMsg = payload.json?.error ?? payload.text ?? `HTTP ${res.status}`;
+        setErr(`Save failed: ${String(serverMsg)}`);
+        return;
+      }
+
+      await load();
+      setMsg("Saved ✅");
+    } catch (e: any) {
+      setErr(`Save failed: ${e?.message ?? "unknown"}`);
+    } finally {
+      setSaving(false);
+    }
   }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUploadId]);
 
   return (
     <div className="space-y-4">
-      {err ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {err}
-        </div>
-      ) : null}
-
-      {msg ? (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">
-          {msg}
-        </div>
-      ) : null}
+      {err ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{err}</div> : null}
+      {msg ? <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{msg}</div> : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-white/70">
-          Enter the % and Lv shown on each component tile.
-        </div>
-
+        <div className="text-sm text-white/70">Enter the % and Lv shown on each component tile.</div>
         <div className="flex gap-2">
           <button
-            onClick={extract}
+            onClick={() => void extract()}
             disabled={extracting || !selectedUploadId}
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
           >
             {extracting ? "Extracting…" : "Extract from Image"}
           </button>
-
           <button
-            onClick={load}
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            onClick={() => void load()}
+            disabled={loading}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
           >
-            Reload
+            {loading ? "Loading…" : "Reload"}
           </button>
-
           <button
-            onClick={save}
-            disabled={saving}
+            onClick={() => void save()}
+            disabled={saving || !selectedUploadId}
             className="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
@@ -281,12 +223,9 @@ export function DroneComponentsEditor({
 
       <div className="grid gap-3 md:grid-cols-2">
         {value.components.map((c, idx) => (
-          <div
-            key={`${c.key}-${idx}`}
-            className="rounded-2xl border border-white/10 bg-white/5 p-4"
-          >
+          <div key={`${c.slot}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-sm font-semibold text-white">
-              {c.label ?? prettyKey(c.key)}
+              {c.label || `Component ${c.slot}`}
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -295,19 +234,17 @@ export function DroneComponentsEditor({
                 <input
                   value={c.percent ?? ""}
                   onChange={(e) => {
-                    const raw = e.target.value.trim();
-                    const v = raw ? Number(raw) : undefined;
-
+                    const v = e.target.value ? Number(e.target.value) : null;
                     setValue((s) => {
                       const next = [...s.components];
                       next[idx] = {
                         ...next[idx],
-                        percent: typeof v === "number" && Number.isFinite(v) ? v : undefined,
+                        percent: Number.isFinite(v as number) ? Math.trunc(v as number) : null,
                       };
                       return { ...s, components: next };
                     });
                   }}
-                  placeholder="e.g., 63"
+                  placeholder="e.g. 63"
                   className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                 />
               </div>
@@ -317,19 +254,17 @@ export function DroneComponentsEditor({
                 <input
                   value={c.level ?? ""}
                   onChange={(e) => {
-                    const raw = e.target.value.trim();
-                    const v = raw ? Number(raw) : undefined;
-
+                    const v = e.target.value ? Number(e.target.value) : null;
                     setValue((s) => {
                       const next = [...s.components];
                       next[idx] = {
                         ...next[idx],
-                        level: typeof v === "number" && Number.isFinite(v) ? v : undefined,
+                        level: Number.isFinite(v as number) ? Math.trunc(v as number) : null,
                       };
                       return { ...s, components: next };
                     });
                   }}
-                  placeholder="e.g., 8"
+                  placeholder="e.g. 8"
                   className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                 />
               </div>
@@ -339,4 +274,4 @@ export function DroneComponentsEditor({
       </div>
     </div>
   );
-                  }
+                             }
