@@ -60,53 +60,71 @@ function toIntOrNull(v: any): number | null {
 type TroopType = "tank" | "air" | "missile";
 type SkillKey = "initial_move" | "offensive" | "defense" | "interference";
 
+type SkillValue = {
+  troop_type: TroopType;
+  skill_type: SkillKey;
+  name: string | null;
+  chip_power: number | null;
+  description: string | null;
+};
+
+type ChipSet = {
+  troop_type: TroopType;
+  label: string;
+  assigned_squad_slot: number | null;
+  displayed_squad_power: string | null;
+  skills: Record<SkillKey, SkillValue>;
+};
+
+type BoostChipsValue = {
+  kind: "drone_boost_chips";
+  chip_sets: Record<TroopType, ChipSet>;
+  combat_boost: {
+    notes: string | null;
+    raw: Record<string, string | null>;
+  };
+  source_upload_id: number;
+};
+
 const troopTypes: TroopType[] = ["tank", "air", "missile"];
 const skillKeys: SkillKey[] = ["initial_move", "offensive", "defense", "interference"];
 
-function emptyBoostChipsValue(uploadId: number) {
+function blankSkill(troopType: TroopType, skillType: SkillKey): SkillValue {
   return {
-    kind: "drone_boost_chips" as const,
+    troop_type: troopType,
+    skill_type: skillType,
+    name: null,
+    chip_power: null,
+    description: null,
+  };
+}
+
+function blankSet(troopType: TroopType): ChipSet {
+  return {
+    troop_type: troopType,
+    label: troopType === "tank" ? "Tank Chip Set" : troopType === "air" ? "Air Chip Set" : "Missile Chip Set",
+    assigned_squad_slot: null,
+    displayed_squad_power: null,
+    skills: {
+      initial_move: blankSkill(troopType, "initial_move"),
+      offensive: blankSkill(troopType, "offensive"),
+      defense: blankSkill(troopType, "defense"),
+      interference: blankSkill(troopType, "interference"),
+    },
+  };
+}
+
+function emptyBoostChipsValue(uploadId: number): BoostChipsValue {
+  return {
+    kind: "drone_boost_chips",
     chip_sets: {
-      tank: {
-        troop_type: "tank" as const,
-        label: "Tank Chip Set",
-        assigned_squad_slot: null,
-        displayed_squad_power: null,
-        skills: {
-          initial_move: { troop_type: "tank" as const, skill_type: "initial_move" as const, name: null, chip_power: null, description: null },
-          offensive: { troop_type: "tank" as const, skill_type: "offensive" as const, name: null, chip_power: null, description: null },
-          defense: { troop_type: "tank" as const, skill_type: "defense" as const, name: null, chip_power: null, description: null },
-          interference: { troop_type: "tank" as const, skill_type: "interference" as const, name: null, chip_power: null, description: null },
-        },
-      },
-      air: {
-        troop_type: "air" as const,
-        label: "Air Chip Set",
-        assigned_squad_slot: null,
-        displayed_squad_power: null,
-        skills: {
-          initial_move: { troop_type: "air" as const, skill_type: "initial_move" as const, name: null, chip_power: null, description: null },
-          offensive: { troop_type: "air" as const, skill_type: "offensive" as const, name: null, chip_power: null, description: null },
-          defense: { troop_type: "air" as const, skill_type: "defense" as const, name: null, chip_power: null, description: null },
-          interference: { troop_type: "air" as const, skill_type: "interference" as const, name: null, chip_power: null, description: null },
-        },
-      },
-      missile: {
-        troop_type: "missile" as const,
-        label: "Missile Chip Set",
-        assigned_squad_slot: null,
-        displayed_squad_power: null,
-        skills: {
-          initial_move: { troop_type: "missile" as const, skill_type: "initial_move" as const, name: null, chip_power: null, description: null },
-          offensive: { troop_type: "missile" as const, skill_type: "offensive" as const, name: null, chip_power: null, description: null },
-          defense: { troop_type: "missile" as const, skill_type: "defense" as const, name: null, chip_power: null, description: null },
-          interference: { troop_type: "missile" as const, skill_type: "interference" as const, name: null, chip_power: null, description: null },
-        },
-      },
+      tank: blankSet("tank"),
+      air: blankSet("air"),
+      missile: blankSet("missile"),
     },
     combat_boost: {
-      notes: null as string | null,
-      raw: {} as Record<string, string | null>,
+      notes: null,
+      raw: {},
     },
     source_upload_id: uploadId,
   };
@@ -269,13 +287,16 @@ export async function POST(req: Request) {
 
     for (const skillKey of skillKeys) {
       const source = parsed?.skills?.[skillKey];
-      base.chip_sets[targetTroop].skills[skillKey] = {
+
+      const nextSkill: SkillValue = {
         troop_type: targetTroop,
         skill_type: skillKey,
         name: clampStr(source?.name, 120),
         chip_power: toIntOrNull(source?.chip_power),
         description: null,
       };
+
+      (base.chip_sets[targetTroop].skills as Record<SkillKey, SkillValue>)[skillKey] = nextSkill;
     }
 
     base.chip_sets[targetTroop].displayed_squad_power = clampStr(parsed?.displayed_squad_power, 40);
