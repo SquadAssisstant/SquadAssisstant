@@ -7,6 +7,7 @@ import { HeroSkillsEditor } from "@/components/hero/HeroSkillsEditor";
 
 import { DroneComponentsEditor } from "@/components/drone/DroneComponentsEditor";
 import { DroneCombatBoostEditor } from "@/components/drone/DroneCombatBoostEditor";
+import { DroneBoostChipsEditor } from "@/components/drone/DroneBoostChipsEditor";
 
 import { OverlordProfileEditor } from "@/components/overlord/OverlordProfileEditor";
 import { OverlordSkillsEditor } from "@/components/overlord/OverlordSkillsEditor";
@@ -14,33 +15,15 @@ import { OverlordPromoteEditor } from "@/components/overlord/OverlordPromoteEdit
 import { OverlordBondEditor } from "@/components/overlord/OverlordBondEditor";
 import { OverlordTrainEditor } from "@/components/overlord/OverlordTrainEditor";
 
-type SquadSlot = 1 | 2 | 3 | 4;
-type HeroSlotIndex = 1 | 2 | 3 | 4 | 5;
-
-type UploadRow = {
+type UploadItem = {
   id: number;
   kind: string;
-  url: string | null;
   created_at?: string;
   storage_path?: string;
+  url?: string | null;
 };
 
-type PlayerStateResponse = {
-  ok?: boolean;
-  state?: any;
-  error?: string;
-};
-
-type HeroDetailsResponse = {
-  ok?: boolean;
-  image_url?: string | null;
-  facts?: {
-    value?: any;
-  } | null;
-  error?: string;
-};
-
-type HeroForm = {
+type HeroProfileValue = {
   name: string;
   level: string;
   stars: string;
@@ -51,11 +34,50 @@ type HeroForm = {
   march_size: string;
 };
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
+type HeroProfileDetailsResponse = {
+  ok: boolean;
+  image_url?: string | null;
+  facts?: {
+    value?: any;
+  } | null;
+  error?: string;
+};
+
+type SquadSlot = {
+  slot: number;
+  hero_upload_id: number | null;
+};
+
+type PlayerState = {
+  squads?: {
+    slots?: SquadSlot[];
+  };
+};
+
+type UploadKind = "hero_profile" | "hero_skills" | "gear" | "drone" | "overlord" | "battle_report";
+
+const HERO_KINDS = ["hero_profile", "hero"];
+const DRONE_KINDS = ["drone", "drone_profile", "drone_components", "drone_combat_boost", "drone_skill_chips"];
+const OVERLORD_KINDS = ["overlord", "lord", "over_lord"];
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
 }
 
-function emptyHeroForm(): HeroForm {
+function firstPathSegment(path?: string | null) {
+  const raw = String(path ?? "").trim();
+  if (!raw) return "";
+  return raw.split("/")[0] ?? "";
+}
+
+function fmtDate(value?: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
+}
+
+function emptyHeroProfile(): HeroProfileValue {
   return {
     name: "",
     level: "",
@@ -68,65 +90,61 @@ function emptyHeroForm(): HeroForm {
   };
 }
 
-function normalizeSlotsFromState(state: any): Record<string, number | null> {
-  const out: Record<string, number | null> = {};
-  const squads = state?.squads ?? {};
-  for (const squad of [1, 2, 3, 4] as const) {
-    const slots = squads?.[String(squad)]?.slots ?? {};
-    for (const slot of [1, 2, 3, 4, 5] as const) {
-      const raw = slots?.[String(slot)];
-      out[`${squad}-${slot}`] = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-    }
-  }
-  return out;
-}
-
-function ownerIdFromStoragePath(path?: string | null): string | null {
-  if (!path) return null;
-  const first = String(path).split("/")[0]?.trim();
-  return first || null;
-}
-
-function fmtDate(value?: string) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
-
-async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
+async function safeJson<T = any>(res: Response): Promise<T | null> {
   const text = await res.text().catch(() => "");
-  if (!text) return { json: null, text: null };
+  if (!text) return null;
   try {
-    return { json: JSON.parse(text), text };
+    return JSON.parse(text) as T;
   } catch {
-    return { json: null, text };
+    return null;
   }
+}
+
+function AppCard({
+  title,
+  subtitle,
+  onClick,
+}: {
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group rounded-3xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-white/20 hover:bg-white/10"
+    >
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="text-base font-semibold text-white">{title}</div>
+        <div className="mt-1 text-sm text-white/55">{subtitle}</div>
+      </div>
+    </button>
+  );
 }
 
 function ModalShell({
   title,
   subtitle,
-  open,
   onClose,
   children,
-  maxWidthClass = "max-w-6xl",
+  open,
+  wide = false,
 }: {
   title: string;
   subtitle?: string;
-  open: boolean;
   onClose: () => void;
   children: React.ReactNode;
-  maxWidthClass?: string;
+  open: boolean;
+  wide?: boolean;
 }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-3 md:items-center md:p-6">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 md:items-center md:p-6">
       <div
-        className={cn(
-          "max-h-[94vh] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220] shadow-2xl",
-          maxWidthClass
+        className={cx(
+          "max-h-[92vh] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220] shadow-2xl",
+          wide ? "max-w-7xl" : "max-w-5xl"
         )}
       >
         <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-6">
@@ -141,79 +159,104 @@ function ModalShell({
             Close
           </button>
         </div>
-        <div className="max-h-[calc(94vh-76px)] overflow-y-auto p-5 md:p-6">{children}</div>
+        <div className="max-h-[calc(92vh-78px)] overflow-y-auto p-5 md:p-6">{children}</div>
       </div>
     </div>
   );
 }
 
-function HomeButton({
-  label,
+function SectionCard({
+  title,
   subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 md:p-5">
+      <div className="mb-4">
+        <div className="text-lg font-semibold text-white">{title}</div>
+        {subtitle ? <div className="mt-1 text-sm text-white/55">{subtitle}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  label,
   onClick,
 }: {
+  active: boolean;
   label: string;
-  subtitle: string;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-3xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-white/20 hover:bg-white/10"
+      className={cx(
+        "rounded-2xl border px-4 py-2 text-sm transition",
+        active
+          ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
+          : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+      )}
     >
-      <div className="text-base font-semibold text-white">{label}</div>
-      <div className="mt-1 text-sm text-white/55">{subtitle}</div>
+      {label}
     </button>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <div className="text-xs uppercase tracking-[0.25em] text-white/45">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-white">{value}</div>
-    </div>
-  );
-}
-
-export default function Home() {
+export default function Page() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [squadsOpen, setSquadsOpen] = useState(false);
   const [droneOpen, setDroneOpen] = useState(false);
   const [overlordOpen, setOverlordOpen] = useState(false);
 
-  const [heroDetailOpen, setHeroDetailOpen] = useState(false);
+  const [heroSubModalOpen, setHeroSubModalOpen] = useState(false);
 
-  const [heroUploads, setHeroUploads] = useState<UploadRow[]>([]);
-  const [droneUploads, setDroneUploads] = useState<UploadRow[]>([]);
-  const [overlordUploads, setOverlordUploads] = useState<UploadRow[]>([]);
+  const [heroUploads, setHeroUploads] = useState<UploadItem[]>([]);
+  const [droneUploads, setDroneUploads] = useState<UploadItem[]>([]);
+  const [overlordUploads, setOverlordUploads] = useState<UploadItem[]>([]);
 
-  const [heroUploadsBusy, setHeroUploadsBusy] = useState(false);
-  const [droneUploadsBusy, setDroneUploadsBusy] = useState(false);
-  const [overlordUploadsBusy, setOverlordUploadsBusy] = useState(false);
+  const [loadingHeroUploads, setLoadingHeroUploads] = useState(false);
+  const [loadingDroneUploads, setLoadingDroneUploads] = useState(false);
+  const [loadingOverlordUploads, setLoadingOverlordUploads] = useState(false);
 
-  const [slots, setSlots] = useState<Record<string, number | null>>({});
-  const [squadsBusy, setSquadsBusy] = useState(false);
-  const [squadsMsg, setSquadsMsg] = useState<string | null>(null);
-  const [squadsErr, setSquadsErr] = useState<string | null>(null);
+  const [playerState, setPlayerState] = useState<PlayerState>({ squads: { slots: [] } });
+  const [loadingPlayerState, setLoadingPlayerState] = useState(false);
+  const [savingPlayerState, setSavingPlayerState] = useState(false);
+  const [playerStateMsg, setPlayerStateMsg] = useState<string | null>(null);
+  const [playerStateErr, setPlayerStateErr] = useState<string | null>(null);
 
+  const [selectedHeroUploadId, setSelectedHeroUploadId] = useState<number | null>(null);
   const [selectedDroneUploadId, setSelectedDroneUploadId] = useState<number | null>(null);
   const [selectedOverlordUploadId, setSelectedOverlordUploadId] = useState<number | null>(null);
 
-  const [selectedHeroSlot, setSelectedHeroSlot] = useState<{ squad: SquadSlot; slot: HeroSlotIndex } | null>(null);
-  const [heroDetailUploadId, setHeroDetailUploadId] = useState<number | null>(null);
-  const [heroDetailBusy, setHeroDetailBusy] = useState(false);
-  const [heroExtractBusy, setHeroExtractBusy] = useState(false);
-  const [heroSaveBusy, setHeroSaveBusy] = useState(false);
-  const [heroDetailErr, setHeroDetailErr] = useState<string | null>(null);
-  const [heroDetailMsg, setHeroDetailMsg] = useState<string | null>(null);
-  const [heroDetailImg, setHeroDetailImg] = useState<string | null>(null);
-  const [heroDetailFacts, setHeroDetailFacts] = useState<any>(null);
-  const [heroForm, setHeroForm] = useState<HeroForm>(emptyHeroForm());
-  const [heroTab, setHeroTab] = useState<"profile" | "gear" | "skills">("profile");
+  const [heroSubModalTab, setHeroSubModalTab] = useState<"profile" | "gear" | "skills">("profile");
+  const [heroProfileLoading, setHeroProfileLoading] = useState(false);
+  const [heroProfileSaving, setHeroProfileSaving] = useState(false);
+  const [heroProfileExtracting, setHeroProfileExtracting] = useState(false);
+  const [heroProfileErr, setHeroProfileErr] = useState<string | null>(null);
+  const [heroProfileMsg, setHeroProfileMsg] = useState<string | null>(null);
+  const [heroProfileImageUrl, setHeroProfileImageUrl] = useState<string | null>(null);
+  const [heroProfile, setHeroProfile] = useState<HeroProfileValue>(emptyHeroProfile());
 
   const [droneTab, setDroneTab] = useState<"overview_components" | "combat_chips">("overview_components");
   const [overlordTab, setOverlordTab] = useState<"overview" | "skills" | "promote" | "bond" | "train">("overview");
+
+  const [uploadKind, setUploadKind] = useState<UploadKind>("hero_profile");
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  const selectedHeroUpload = useMemo(
+    () => heroUploads.find((u) => u.id === selectedHeroUploadId) ?? null,
+    [heroUploads, selectedHeroUploadId]
+  );
 
   const selectedDroneUpload = useMemo(
     () => droneUploads.find((u) => u.id === selectedDroneUploadId) ?? null,
@@ -225,85 +268,101 @@ export default function Home() {
     [overlordUploads, selectedOverlordUploadId]
   );
 
-  const droneOwnerId = useMemo(
-    () => ownerIdFromStoragePath(selectedDroneUpload?.storage_path),
-    [selectedDroneUpload?.storage_path]
-  );
+  const droneOwnerId = useMemo(() => firstPathSegment(selectedDroneUpload?.storage_path), [selectedDroneUpload]);
 
-  const loadUploads = useCallback(async (kind: string): Promise<UploadRow[]> => {
-    const res = await fetch(`/api/uploads/list?kind=${encodeURIComponent(kind)}&limit=120`, {
-      credentials: "include",
+  const squadSlots = useMemo(() => {
+    const raw = playerState?.squads?.slots;
+    if (Array.isArray(raw) && raw.length) {
+      return raw
+        .map((s: any, idx: number) => ({
+          slot: Number(s?.slot ?? idx + 1),
+          hero_upload_id: Number.isFinite(Number(s?.hero_upload_id)) ? Number(s.hero_upload_id) : null,
+        }))
+        .slice(0, 4);
+    }
+    return [1, 2, 3, 4].map((slot) => ({ slot, hero_upload_id: null }));
+  }, [playerState]);
+
+  const loadUploadsByKinds = useCallback(async (kinds: string[]) => {
+    const merged = new Map<number, UploadItem>();
+
+    for (const kind of kinds) {
+      const res = await fetch(`/api/uploads/list?kind=${encodeURIComponent(kind)}&limit=120`, {
+        credentials: "include",
+      });
+      const json = await safeJson<{ ok?: boolean; uploads?: UploadItem[]; error?: string }>(res);
+      if (!res.ok) continue;
+
+      const uploads = Array.isArray(json?.uploads) ? json.uploads : [];
+      for (const item of uploads) {
+        merged.set(item.id, item);
+      }
+    }
+
+    return Array.from(merged.values()).sort((a, b) => {
+      const aa = new Date(a.created_at ?? 0).getTime();
+      const bb = new Date(b.created_at ?? 0).getTime();
+      return bb - aa;
     });
-    const payload = await safeReadResponse(res);
-    if (!res.ok) return [];
-    return Array.isArray(payload.json?.uploads) ? payload.json.uploads : [];
   }, []);
 
   const loadHeroUploads = useCallback(async () => {
-    setHeroUploadsBusy(true);
+    setLoadingHeroUploads(true);
     try {
-      const items = await loadUploads("hero_profile");
+      const items = await loadUploadsByKinds(HERO_KINDS);
       setHeroUploads(items);
+      if (!selectedHeroUploadId && items[0]) setSelectedHeroUploadId(items[0].id);
     } finally {
-      setHeroUploadsBusy(false);
+      setLoadingHeroUploads(false);
     }
-  }, [loadUploads]);
+  }, [loadUploadsByKinds, selectedHeroUploadId]);
 
   const loadDroneUploads = useCallback(async () => {
-    setDroneUploadsBusy(true);
+    setLoadingDroneUploads(true);
     try {
-      const items = await loadUploads("drone");
+      const items = await loadUploadsByKinds(DRONE_KINDS);
       setDroneUploads(items);
       if (!selectedDroneUploadId && items[0]) setSelectedDroneUploadId(items[0].id);
     } finally {
-      setDroneUploadsBusy(false);
+      setLoadingDroneUploads(false);
     }
-  }, [loadUploads, selectedDroneUploadId]);
+  }, [loadUploadsByKinds, selectedDroneUploadId]);
 
   const loadOverlordUploads = useCallback(async () => {
-    setOverlordUploadsBusy(true);
+    setLoadingOverlordUploads(true);
     try {
-      const items = await loadUploads("overlord");
+      const items = await loadUploadsByKinds(OVERLORD_KINDS);
       setOverlordUploads(items);
       if (!selectedOverlordUploadId && items[0]) setSelectedOverlordUploadId(items[0].id);
     } finally {
-      setOverlordUploadsBusy(false);
+      setLoadingOverlordUploads(false);
     }
-  }, [loadUploads, selectedOverlordUploadId]);
+  }, [loadUploadsByKinds, selectedOverlordUploadId]);
 
   const loadPlayerState = useCallback(async () => {
-    setSquadsBusy(true);
-    setSquadsErr(null);
+    setLoadingPlayerState(true);
+    setPlayerStateErr(null);
     try {
-      const res = await fetch("/api/player/state", {
-        credentials: "include",
-      });
-      const payload = await safeReadResponse(res);
+      const res = await fetch("/api/player/state", { credentials: "include" });
+      const json = await safeJson<PlayerStateResponse>(res);
       if (!res.ok) {
-        setSquadsErr(payload.json?.error ?? `Failed to load squads (${res.status})`);
+        setPlayerStateErr(json?.error ?? `Failed to load squads (${res.status})`);
         return;
       }
-      setSlots(normalizeSlotsFromState(payload.json?.state ?? {}));
+      setPlayerState(json?.state ?? { squads: { slots: [] } });
     } catch (e: any) {
-      setSquadsErr(e?.message ?? "Failed to load squads");
+      setPlayerStateErr(e?.message ?? "Failed to load squads");
     } finally {
-      setSquadsBusy(false);
+      setLoadingPlayerState(false);
     }
   }, []);
 
-  const savePlayerState = useCallback(
-    async (nextSlots: Record<string, number | null>) => {
-      setSquadsErr(null);
-      setSquadsMsg(null);
-      const nextState = {
-        squads: {
-          "1": { slots: { "1": nextSlots["1-1"], "2": nextSlots["1-2"], "3": nextSlots["1-3"], "4": nextSlots["1-4"], "5": nextSlots["1-5"] } },
-          "2": { slots: { "1": nextSlots["2-1"], "2": nextSlots["2-2"], "3": nextSlots["2-3"], "4": nextSlots["2-4"], "5": nextSlots["2-5"] } },
-          "3": { slots: { "1": nextSlots["3-1"], "2": nextSlots["3-2"], "3": nextSlots["3-3"], "4": nextSlots["3-4"], "5": nextSlots["3-5"] } },
-          "4": { slots: { "1": nextSlots["4-1"], "2": nextSlots["4-2"], "3": nextSlots["4-3"], "4": nextSlots["4-4"], "5": nextSlots["4-5"] } },
-        },
-      };
+  const savePlayerState = useCallback(async (nextState: PlayerState) => {
+    setSavingPlayerState(true);
+    setPlayerStateErr(null);
+    setPlayerStateMsg(null);
 
+    try {
       const res = await fetch("/api/player/state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -311,106 +370,111 @@ export default function Home() {
         body: JSON.stringify(nextState),
       });
 
-      const payload = await safeReadResponse(res);
+      const json = await safeJson<PlayerStateResponse>(res);
       if (!res.ok) {
-        setSquadsErr(payload.json?.error ?? `Failed to save squads (${res.status})`);
-        return false;
+        setPlayerStateErr(json?.error ?? `Failed to save squads (${res.status})`);
+        return;
       }
 
-      setSquadsMsg("Squads saved ✅");
-      return true;
+      setPlayerState(json?.state ?? nextState);
+      setPlayerStateMsg("Squads saved ✅");
+    } catch (e: any) {
+      setPlayerStateErr(e?.message ?? "Failed to save squads");
+    } finally {
+      setSavingPlayerState(false);
+    }
+  }, []);
+
+  const updateSquadSlot = useCallback(
+    async (slotNumber: number, heroUploadId: number | null) => {
+      const nextSlots = squadSlots.map((slot) =>
+        slot.slot === slotNumber ? { ...slot, hero_upload_id: heroUploadId } : slot
+      );
+      const nextState: PlayerState = {
+        ...playerState,
+        squads: {
+          ...(playerState.squads ?? {}),
+          slots: nextSlots,
+        },
+      };
+      setPlayerState(nextState);
+      await savePlayerState(nextState);
     },
-    []
+    [playerState, savePlayerState, squadSlots]
   );
 
-  const assignHeroToSlot = useCallback(
-    async (squad: SquadSlot, slot: HeroSlotIndex, uploadId: number | null) => {
-      const key = `${squad}-${slot}`;
-      const next = { ...slots, [key]: uploadId };
-      setSlots(next);
-      await savePlayerState(next);
-    },
-    [savePlayerState, slots]
-  );
+  const loadHeroProfile = useCallback(async (uploadId: number | null) => {
+    if (!uploadId) {
+      setHeroProfile(emptyHeroProfile());
+      setHeroProfileImageUrl(null);
+      return;
+    }
 
-  const loadHeroDetails = useCallback(async (uploadId: number | null) => {
-    if (!uploadId) return;
-
-    setHeroDetailBusy(true);
-    setHeroDetailErr(null);
-    setHeroDetailMsg(null);
+    setHeroProfileLoading(true);
+    setHeroProfileErr(null);
+    setHeroProfileMsg(null);
 
     try {
       const res = await fetch(`/api/hero/details?upload_id=${uploadId}`, {
         credentials: "include",
       });
-      const payload = (await safeReadResponse(res)).json as HeroDetailsResponse | null;
+      const json = await safeJson<HeroProfileDetailsResponse>(res);
 
       if (!res.ok) {
-        setHeroDetailErr(payload?.error ?? `Failed to load hero (${res.status})`);
+        setHeroProfileErr(json?.error ?? `Load failed (${res.status})`);
         return;
       }
 
-      const factsValue = payload?.facts?.value ?? {};
-      setHeroDetailImg(payload?.image_url ?? null);
-      setHeroDetailFacts(factsValue);
-      setHeroForm({
-        name: factsValue?.name ? String(factsValue.name) : "",
-        level: factsValue?.level != null ? String(factsValue.level) : "",
-        stars: factsValue?.stars != null ? String(factsValue.stars) : "",
-        power: factsValue?.power != null ? String(factsValue.power) : "",
-        attack: factsValue?.stats?.attack != null ? String(factsValue.stats.attack) : "",
-        hp: factsValue?.stats?.hp != null ? String(factsValue.stats.hp) : "",
-        defense: factsValue?.stats?.defense != null ? String(factsValue.stats.defense) : "",
-        march_size: factsValue?.stats?.march_size != null ? String(factsValue.stats.march_size) : "",
+      const facts = json?.facts?.value ?? {};
+      setHeroProfileImageUrl(json?.image_url ?? null);
+      setHeroProfile({
+        name: facts?.name ? String(facts.name) : "",
+        level: facts?.level != null ? String(facts.level) : "",
+        stars: facts?.stars != null ? String(facts.stars) : "",
+        power: facts?.power != null ? String(facts.power) : "",
+        attack: facts?.stats?.attack != null ? String(facts.stats.attack) : "",
+        hp: facts?.stats?.hp != null ? String(facts.stats.hp) : "",
+        defense: facts?.stats?.defense != null ? String(facts.stats.defense) : "",
+        march_size: facts?.stats?.march_size != null ? String(facts.stats.march_size) : "",
       });
     } catch (e: any) {
-      setHeroDetailErr(e?.message ?? "Failed to load hero");
+      setHeroProfileErr(e?.message ?? "Load failed");
     } finally {
-      setHeroDetailBusy(false);
+      setHeroProfileLoading(false);
     }
   }, []);
 
-  const openHeroDetail = useCallback(
-    async (uploadId: number | null, slotRef?: { squad: SquadSlot; slot: HeroSlotIndex } | null) => {
-      if (!uploadId) return;
-      if (slotRef) setSelectedHeroSlot(slotRef);
-      setHeroDetailUploadId(uploadId);
-      setHeroTab("profile");
-      setHeroDetailOpen(true);
-      await loadHeroDetails(uploadId);
-    },
-    [loadHeroDetails]
-  );
+  const extractHeroProfile = useCallback(async () => {
+    if (!selectedHeroUploadId) {
+      setHeroProfileErr("Select a hero screenshot first.");
+      return;
+    }
 
-  const extractHero = useCallback(async () => {
-    if (!heroDetailUploadId) return;
-
-    setHeroExtractBusy(true);
-    setHeroDetailErr(null);
-    setHeroDetailMsg(null);
+    setHeroProfileExtracting(true);
+    setHeroProfileErr(null);
+    setHeroProfileMsg(null);
 
     try {
       const res = await fetch("/api/hero/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ upload_id: heroDetailUploadId }),
+        body: JSON.stringify({ upload_id: selectedHeroUploadId }),
       });
-      const payload = await safeReadResponse(res);
 
+      const json = await safeJson<{ ok?: boolean; extracted?: any; error?: string }>(res);
       if (!res.ok) {
-        setHeroDetailErr(payload.json?.error ?? `Extract failed (${res.status})`);
+        setHeroProfileErr(json?.error ?? `Extract failed (${res.status})`);
         return;
       }
 
-      const extracted = payload.json?.extracted;
+      const extracted = json?.extracted;
       if (!extracted) {
-        setHeroDetailErr("Extract returned no data.");
+        setHeroProfileErr("Extract returned no data.");
         return;
       }
 
-      setHeroForm({
+      setHeroProfile({
         name: extracted?.name ? String(extracted.name) : "",
         level: extracted?.level != null ? String(extracted.level) : "",
         stars: extracted?.stars != null ? String(extracted.stars) : "",
@@ -421,20 +485,23 @@ export default function Home() {
         march_size: extracted?.stats?.march_size != null ? String(extracted.stats.march_size) : "",
       });
 
-      setHeroDetailMsg("Extracted ✅ (review, then Save)");
+      setHeroProfileMsg("Extracted ✅ (review, then Save)");
     } catch (e: any) {
-      setHeroDetailErr(e?.message ?? "Extract failed");
+      setHeroProfileErr(e?.message ?? "Extract failed");
     } finally {
-      setHeroExtractBusy(false);
+      setHeroProfileExtracting(false);
     }
-  }, [heroDetailUploadId]);
+  }, [selectedHeroUploadId]);
 
-  const saveHero = useCallback(async () => {
-    if (!heroDetailUploadId) return;
+  const saveHeroProfile = useCallback(async () => {
+    if (!selectedHeroUploadId) {
+      setHeroProfileErr("Select a hero screenshot first.");
+      return;
+    }
 
-    setHeroSaveBusy(true);
-    setHeroDetailErr(null);
-    setHeroDetailMsg(null);
+    setHeroProfileSaving(true);
+    setHeroProfileErr(null);
+    setHeroProfileMsg(null);
 
     try {
       const res = await fetch("/api/hero/save", {
@@ -442,565 +509,695 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          upload_id: heroDetailUploadId,
-          name: heroForm.name,
-          level: heroForm.level,
-          stars: heroForm.stars,
-          power: heroForm.power,
-          attack: heroForm.attack,
-          hp: heroForm.hp,
-          defense: heroForm.defense,
-          march_size: heroForm.march_size,
+          upload_id: selectedHeroUploadId,
+          name: heroProfile.name,
+          level: heroProfile.level,
+          stars: heroProfile.stars,
+          power: heroProfile.power,
+          attack: heroProfile.attack,
+          hp: heroProfile.hp,
+          defense: heroProfile.defense,
+          march_size: heroProfile.march_size,
         }),
       });
 
-      const payload = await safeReadResponse(res);
+      const json = await safeJson<{ ok?: boolean; error?: string }>(res);
       if (!res.ok) {
-        setHeroDetailErr(payload.json?.error ?? `Save failed (${res.status})`);
+        setHeroProfileErr(json?.error ?? `Save failed (${res.status})`);
         return;
       }
 
-      await loadHeroDetails(heroDetailUploadId);
-      setHeroDetailMsg("Saved ✅");
+      await loadHeroProfile(selectedHeroUploadId);
+      setHeroProfileMsg("Saved ✅");
     } catch (e: any) {
-      setHeroDetailErr(e?.message ?? "Save failed");
+      setHeroProfileErr(e?.message ?? "Save failed");
     } finally {
-      setHeroSaveBusy(false);
+      setHeroProfileSaving(false);
     }
-  }, [heroDetailUploadId, heroForm, loadHeroDetails]);
+  }, [heroProfile, loadHeroProfile, selectedHeroUploadId]);
+
+  const submitUploads = useCallback(async () => {
+    if (!uploadFiles.length) {
+      setUploadErr("Choose at least one screenshot first.");
+      return;
+    }
+
+    setUploadBusy(true);
+    setUploadErr(null);
+    setUploadMsg(null);
+
+    try {
+      for (const file of uploadFiles) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("kind", uploadKind);
+
+        const res = await fetch("/api/uploads/image", {
+          method: "POST",
+          credentials: "include",
+          body: form,
+        });
+
+        const payload = await safeJson<{ ok?: boolean; error?: string }>(res);
+        if (!res.ok) {
+          throw new Error(payload?.error ?? `Upload failed (${res.status})`);
+        }
+      }
+
+      setUploadMsg(`Uploaded ${uploadFiles.length} screenshot${uploadFiles.length === 1 ? "" : "s"} ✅`);
+      setUploadFiles([]);
+
+      if (uploadKind === "hero_profile" || uploadKind === "hero_skills" || uploadKind === "gear") {
+        await loadHeroUploads();
+      }
+      if (uploadKind === "drone") {
+        await loadDroneUploads();
+      }
+      if (uploadKind === "overlord") {
+        await loadOverlordUploads();
+      }
+    } catch (e: any) {
+      setUploadErr(e?.message ?? "Upload failed");
+    } finally {
+      setUploadBusy(false);
+    }
+  }, [loadDroneUploads, loadHeroUploads, loadOverlordUploads, uploadFiles, uploadKind]);
 
   useEffect(() => {
     void loadHeroUploads();
     void loadDroneUploads();
     void loadOverlordUploads();
     void loadPlayerState();
-  }, [loadHeroUploads, loadDroneUploads, loadOverlordUploads, loadPlayerState]);
+  }, [loadDroneUploads, loadHeroUploads, loadOverlordUploads, loadPlayerState]);
 
-  const squadCards = useMemo(() => {
-    const result: Array<{ squad: SquadSlot; slots: Array<{ slot: HeroSlotIndex; upload: UploadRow | null }> }> = [];
-    for (const squad of [1, 2, 3, 4] as const) {
-      const row = {
-        squad,
-        slots: [1, 2, 3, 4, 5].map((slot) => {
-          const uploadId = slots[`${squad}-${slot}`];
-          const upload = heroUploads.find((u) => u.id === uploadId) ?? null;
-          return { slot: slot as HeroSlotIndex, upload };
-        }),
-      };
-      result.push(row);
+  useEffect(() => {
+    if (heroSubModalOpen) {
+      void loadHeroProfile(selectedHeroUploadId);
     }
-    return result;
-  }, [heroUploads, slots]);
+  }, [heroSubModalOpen, loadHeroProfile, selectedHeroUploadId]);
+
+  const assignedHeroUploads = useMemo(() => {
+    const ids = new Set(squadSlots.map((s) => s.hero_upload_id).filter((v): v is number => v != null));
+    return heroUploads.filter((u) => ids.has(u.id));
+  }, [heroUploads, squadSlots]);
 
   return (
-    <main className="min-h-screen bg-[#070c15] text-white">
+    <main className="min-h-screen bg-[#060b14] text-white">
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
         <div className="rounded-[32px] border border-white/10 bg-gradient-to-b from-[#101828] to-[#0a1020] p-5 md:p-7">
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-3xl font-semibold tracking-tight text-white md:text-4xl">SquadAssistant</div>
-              <div className="mt-2 max-w-3xl text-sm text-white/55 md:text-base">
-                Clean launcher page with working entry points for uploads, squads, hero profile submodal, drone, and overlord.
+              <div className="mt-2 max-w-2xl text-sm text-white/55 md:text-base">
+                Home launcher for uploads, squads, hero profile submodal, drone, and overlord.
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <HomeButton label="Upload" subtitle="View saved screenshots" onClick={() => setUploadOpen(true)} />
-              <HomeButton label="Squads" subtitle="Assign heroes and open hero profiles" onClick={() => setSquadsOpen(true)} />
-              <HomeButton label="Drone" subtitle="Overview, components, combat, chips" onClick={() => setDroneOpen(true)} />
-              <HomeButton label="Overlord" subtitle="Profile, skills, promote, bond, train" onClick={() => setOverlordOpen(true)} />
+              <AppCard title="Upload" subtitle="Add and review screenshots" onClick={() => setUploadOpen(true)} />
+              <AppCard title="Squads" subtitle="Assign heroes and open profiles" onClick={() => setSquadsOpen(true)} />
+              <AppCard title="Drone" subtitle="Overview, components, boost, chips" onClick={() => setDroneOpen(true)} />
+              <AppCard title="Overlord" subtitle="Profile, skills, bond, train" onClick={() => setOverlordOpen(true)} />
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-semibold text-white">Quick Snapshot</div>
-              <div className="mt-1 text-sm text-white/55">Current counts loaded from your saved uploads.</div>
+          <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <SectionCard title="Current Squad Snapshot" subtitle="Assigned hero uploads from squad slots 1 through 4">
+              {loadingPlayerState ? (
+                <div className="text-sm text-white/55">Loading squads…</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {squadSlots.map((slot) => {
+                    const hero = heroUploads.find((u) => u.id === slot.hero_upload_id) ?? null;
+                    return (
+                      <button
+                        key={slot.slot}
+                        onClick={() => {
+                          if (!hero?.id) return;
+                          setSelectedHeroUploadId(hero.id);
+                          setHeroSubModalTab("profile");
+                          setHeroSubModalOpen(true);
+                          setSquadsOpen(true);
+                        }}
+                        className="rounded-3xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10"
+                      >
+                        <div className="text-xs uppercase tracking-[0.25em] text-white/40">Squad {slot.slot}</div>
+                        <div className="mt-3 h-32 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                          {hero?.url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={hero.url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-sm text-white/35">No hero</div>
+                          )}
+                        </div>
+                        <div className="mt-3 text-sm text-white/75">{hero ? `Upload #${hero.id}` : "Tap Squads to assign"}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <StatCard label="Heroes" value={heroUploads.length} />
-                <StatCard label="Drone" value={droneUploads.length} />
-                <StatCard label="Overlord" value={overlordUploads.length} />
+            <SectionCard title="Library Snapshot" subtitle="Quick count of currently loaded screenshot groups">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Heroes</div>
+                  <div className="mt-2 text-3xl font-semibold text-white">{heroUploads.length}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone</div>
+                  <div className="mt-2 text-3xl font-semibold text-white">{droneUploads.length}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Overlord</div>
+                  <div className="mt-2 text-3xl font-semibold text-white">{overlordUploads.length}</div>
+                </div>
               </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-semibold text-white">Current Squad Summary</div>
-              <div className="mt-1 text-sm text-white/55">Hero uploads currently assigned into squad slots.</div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {squadCards.slice(0, 2).map((group) => (
-                  <div key={group.squad} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Squad {group.squad}</div>
-                    <div className="mt-3 text-sm text-white/70">
-                      {group.slots.filter((s) => s.upload).length} / 5 hero slots assigned
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            </SectionCard>
           </div>
         </div>
       </div>
 
       <ModalShell
         title="Uploads"
-        subtitle="Saved screenshots grouped by section."
-        open={uploadOpen}
+        subtitle="Upload new screenshots and review your saved library."
         onClose={() => setUploadOpen(false)}
-        maxWidthClass="max-w-7xl"
+        open={uploadOpen}
+        wide
       >
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold text-white">Hero Uploads</div>
-            <div className="mt-1 text-sm text-white/55">{heroUploadsBusy ? "Loading…" : `${heroUploads.length} items`}</div>
-            <div className="mt-4 grid gap-3">
-              {heroUploads.map((u) => (
-                <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-sm font-medium text-white">Hero #{u.id}</div>
-                  <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
-                </div>
-              ))}
+        <div className="space-y-6">
+          {uploadErr ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{uploadErr}</div>
+          ) : null}
+
+          {uploadMsg ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{uploadMsg}</div>
+          ) : null}
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 md:p-5">
+            <div className="text-lg font-semibold text-white">Upload New Screenshots</div>
+            <div className="mt-1 text-sm text-white/55">
+              Choose the section, pick one or more screenshots, and upload them into your saved library.
             </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr]">
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Section</div>
+                <select
+                  value={uploadKind}
+                  onChange={(e) => setUploadKind(e.target.value as UploadKind)}
+                  className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                >
+                  <option value="hero_profile">Hero Profile</option>
+                  <option value="hero_skills">Hero Skills</option>
+                  <option value="gear">Hero Gear</option>
+                  <option value="drone">Drone</option>
+                  <option value="overlord">Overlord</option>
+                  <option value="battle_report">Battle Report</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Screenshots</div>
+                <label className="mt-2 flex min-h-[120px] cursor-pointer items-center justify-center rounded-3xl border border-dashed border-white/15 bg-black/20 p-4 text-center hover:bg-black/30">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      setUploadFiles(files);
+                      setUploadErr(null);
+                      setUploadMsg(null);
+                    }}
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-white">Tap to choose screenshots</div>
+                    <div className="mt-1 text-xs text-white/45">PNG, JPG, WEBP, or GIF</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {uploadFiles.length ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="text-sm font-medium text-white">Ready to upload</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {uploadFiles.map((file, idx) => (
+                    <div key={`${file.name}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="truncate text-sm text-white">{file.name}</div>
+                      <div className="mt-1 text-xs text-white/45">{Math.round(file.size / 1024)} KB</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void submitUploads()}
+                    disabled={uploadBusy}
+                    className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 disabled:opacity-40"
+                  >
+                    {uploadBusy ? "Uploading…" : "Upload Screenshots"}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setUploadFiles([]);
+                      setUploadErr(null);
+                      setUploadMsg(null);
+                    }}
+                    disabled={uploadBusy}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 disabled:opacity-40"
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold text-white">Drone Uploads</div>
-            <div className="mt-1 text-sm text-white/55">{droneUploadsBusy ? "Loading…" : `${droneUploads.length} items`}</div>
-            <div className="mt-4 grid gap-3">
-              {droneUploads.map((u) => (
-                <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-sm font-medium text-white">Drone #{u.id}</div>
-                  <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <SectionCard title="Hero Uploads" subtitle={loadingHeroUploads ? "Loading…" : `${heroUploads.length} items`}>
+              <div className="grid gap-3">
+                {heroUploads.map((u) => (
+                  <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-sm font-medium text-white">Hero #{u.id}</div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold text-white">Overlord Uploads</div>
-            <div className="mt-1 text-sm text-white/55">{overlordUploadsBusy ? "Loading…" : `${overlordUploads.length} items`}</div>
-            <div className="mt-4 grid gap-3">
-              {overlordUploads.map((u) => (
-                <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-sm font-medium text-white">Overlord #{u.id}</div>
-                  <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
-                </div>
-              ))}
-            </div>
+            <SectionCard title="Drone Uploads" subtitle={loadingDroneUploads ? "Loading…" : `${droneUploads.length} items`}>
+              <div className="grid gap-3">
+                {droneUploads.map((u) => (
+                  <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-sm font-medium text-white">Drone #{u.id}</div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Overlord Uploads"
+              subtitle={loadingOverlordUploads ? "Loading…" : `${overlordUploads.length} items`}
+            >
+              <div className="grid gap-3">
+                {overlordUploads.map((u) => (
+                  <div key={u.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-sm font-medium text-white">Overlord #{u.id}</div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
           </div>
         </div>
       </ModalShell>
 
       <ModalShell
         title="Squads"
-        subtitle="Assign hero uploads into squad slots. Open the hero profile submodal from here."
-        open={squadsOpen}
+        subtitle="Assign hero screenshots to squad slots and open the hero profile submodal from inside squads."
         onClose={() => setSquadsOpen(false)}
-        maxWidthClass="max-w-7xl"
+        open={squadsOpen}
+        wide
       >
-        {squadsErr ? (
-          <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{squadsErr}</div>
-        ) : null}
-        {squadsMsg ? (
-          <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{squadsMsg}</div>
-        ) : null}
+        <div className="space-y-6">
+          {playerStateErr ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{playerStateErr}</div>
+          ) : null}
+          {playerStateMsg ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{playerStateMsg}</div>
+          ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-2">
-          {squadCards.map((group) => (
-            <div key={group.squad} className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="text-lg font-semibold text-white">Squad {group.squad}</div>
-              <div className="mt-1 text-sm text-white/55">{squadsBusy ? "Loading…" : "Each slot can point to one hero upload."}</div>
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <SectionCard title="Squad Slots" subtitle={savingPlayerState ? "Saving…" : "Select which hero belongs in each slot"}>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {squadSlots.map((slot) => {
+                  const selectedId = slot.hero_upload_id;
+                  const hero = heroUploads.find((u) => u.id === selectedId) ?? null;
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                {group.slots.map(({ slot, upload }) => (
-                  <div key={`${group.squad}-${slot}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Slot {slot}</div>
+                  return (
+                    <div key={slot.slot} className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                      <div className="text-xs uppercase tracking-[0.25em] text-white/45">Squad {slot.slot}</div>
 
-                    <div className="mt-3 h-28 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                      {upload?.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={upload.url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-white/35">No hero</div>
-                      )}
+                      <div className="mt-3 h-36 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                        {hero?.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={hero.url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-white/35">No hero assigned</div>
+                        )}
+                      </div>
+
+                      <select
+                        value={selectedId ?? ""}
+                        onChange={(e) => {
+                          const next = e.target.value ? Number(e.target.value) : null;
+                          void updateSquadSlot(slot.slot, next);
+                        }}
+                        className="mt-3 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                      >
+                        <option value="">— Select hero upload —</option>
+                        {heroUploads.map((upload) => (
+                          <option key={upload.id} value={upload.id}>
+                            Hero #{upload.id}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        onClick={() => {
+                          if (!hero?.id) return;
+                          setSelectedHeroUploadId(hero.id);
+                          setHeroSubModalTab("profile");
+                          setHeroSubModalOpen(true);
+                        }}
+                        disabled={!hero?.id}
+                        className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 disabled:opacity-40"
+                      >
+                        Open Hero Profile
+                      </button>
                     </div>
-
-                    <select
-                      value={upload?.id ?? ""}
-                      onChange={(e) => {
-                        const next = e.target.value ? Number(e.target.value) : null;
-                        void assignHeroToSlot(group.squad, slot, next);
-                      }}
-                      className="mt-3 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
-                    >
-                      <option value="">— none —</option>
-                      {heroUploads.map((hero) => (
-                        <option key={hero.id} value={hero.id}>
-                          Hero #{hero.id}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      onClick={() => void openHeroDetail(upload?.id ?? null, { squad: group.squad, slot })}
-                      disabled={!upload?.id}
-                      className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 disabled:opacity-40"
-                    >
-                      Open Hero
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            </div>
-          ))}
+            </SectionCard>
+
+            <SectionCard title="Assigned Hero Strip" subtitle="Quick access to the heroes currently mapped into squads">
+              {assignedHeroUploads.length ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {assignedHeroUploads.map((hero) => (
+                    <button
+                      key={hero.id}
+                      onClick={() => {
+                        setSelectedHeroUploadId(hero.id);
+                        setHeroSubModalTab("profile");
+                        setHeroSubModalOpen(true);
+                      }}
+                      className="rounded-3xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10"
+                    >
+                      <div className="h-36 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                        {hero.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={hero.url} alt="" className="h-full w-full object-cover" />
+                        ) : null}
+                      </div>
+                      <div className="mt-3 text-sm font-medium text-white">Hero #{hero.id}</div>
+                      <div className="text-xs text-white/45">{fmtDate(hero.created_at)}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-white/50">No heroes are assigned yet.</div>
+              )}
+            </SectionCard>
+          </div>
         </div>
       </ModalShell>
 
       <ModalShell
         title="Hero Profile"
-        subtitle={
-          selectedHeroSlot
-            ? `Squad ${selectedHeroSlot.squad} • Slot ${selectedHeroSlot.slot} • Upload #${heroDetailUploadId ?? "—"}`
-            : `Upload #${heroDetailUploadId ?? "—"}`
-        }
-        open={heroDetailOpen}
-        onClose={() => setHeroDetailOpen(false)}
-        maxWidthClass="max-w-7xl"
+        subtitle={selectedHeroUpload ? `Hero upload #${selectedHeroUpload.id}` : "Hero submodal inside squads"}
+        onClose={() => setHeroSubModalOpen(false)}
+        open={heroSubModalOpen}
+        wide
       >
-        <div className="mb-5 flex flex-wrap gap-2">
-          <button
-            onClick={() => setHeroTab("profile")}
-            className={cn(
-              "rounded-2xl border px-4 py-2 text-sm",
-              heroTab === "profile"
-                ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                : "border-white/10 bg-white/5 text-white/70"
-            )}
-          >
-            Profile
-          </button>
-          <button
-            onClick={() => setHeroTab("gear")}
-            className={cn(
-              "rounded-2xl border px-4 py-2 text-sm",
-              heroTab === "gear"
-                ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                : "border-white/10 bg-white/5 text-white/70"
-            )}
-          >
-            Gear
-          </button>
-          <button
-            onClick={() => setHeroTab("skills")}
-            className={cn(
-              "rounded-2xl border px-4 py-2 text-sm",
-              heroTab === "skills"
-                ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                : "border-white/10 bg-white/5 text-white/70"
-            )}
-          >
-            Skills
-          </button>
-        </div>
-
-        {heroTab === "profile" ? (
-          <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="text-lg font-semibold text-white">Hero Card</div>
-              <div className="mt-4 overflow-hidden rounded-3xl border border-white/10 bg-black/20">
-                {heroDetailImg ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={heroDetailImg} alt="" className="h-[420px] w-full object-cover" />
-                ) : (
-                  <div className="flex h-[420px] items-center justify-center text-sm text-white/35">
-                    {heroDetailBusy ? "Loading hero image…" : "No hero image available"}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => void extractHero()}
-                  disabled={heroExtractBusy || !heroDetailUploadId}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 disabled:opacity-40"
-                >
-                  {heroExtractBusy ? "Extracting…" : "Extract"}
-                </button>
-                <button
-                  onClick={() => void loadHeroDetails(heroDetailUploadId)}
-                  disabled={heroDetailBusy || !heroDetailUploadId}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 disabled:opacity-40"
-                >
-                  {heroDetailBusy ? "Loading…" : "Reload"}
-                </button>
-                <button
-                  onClick={() => void saveHero()}
-                  disabled={heroSaveBusy || !heroDetailUploadId}
-                  className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100 disabled:opacity-40"
-                >
-                  {heroSaveBusy ? "Saving…" : "Save"}
-                </button>
-              </div>
-
-              {heroDetailErr ? (
-                <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{heroDetailErr}</div>
-              ) : null}
-              {heroDetailMsg ? (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{heroDetailMsg}</div>
-              ) : null}
-
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Name</div>
-                  <input value={heroForm.name} onChange={(e) => setHeroForm((s) => ({ ...s, name: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Level</div>
-                  <input value={heroForm.level} onChange={(e) => setHeroForm((s) => ({ ...s, level: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Stars</div>
-                  <input value={heroForm.stars} onChange={(e) => setHeroForm((s) => ({ ...s, stars: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Power</div>
-                  <input value={heroForm.power} onChange={(e) => setHeroForm((s) => ({ ...s, power: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Attack</div>
-                  <input value={heroForm.attack} onChange={(e) => setHeroForm((s) => ({ ...s, attack: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">HP</div>
-                  <input value={heroForm.hp} onChange={(e) => setHeroForm((s) => ({ ...s, hp: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">Defense</div>
-                  <input value={heroForm.defense} onChange={(e) => setHeroForm((s) => ({ ...s, defense: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-                <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <div className="text-xs text-white/55">March Size</div>
-                  <input value={heroForm.march_size} onChange={(e) => setHeroForm((s) => ({ ...s, march_size: e.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white" />
-                </label>
-              </div>
-
-              {heroDetailFacts?.stats ? (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
-                  Detected stats snapshot — Attack: {heroDetailFacts.stats.attack ?? "—"} • HP: {heroDetailFacts.stats.hp ?? "—"} • Defense: {heroDetailFacts.stats.defense ?? "—"} • March Size: {heroDetailFacts.stats.march_size ?? "—"}
-                </div>
-              ) : null}
-            </div>
+        <div className="space-y-6">
+          <div className="flex flex-wrap gap-2">
+            <TabButton active={heroSubModalTab === "profile"} label="Profile" onClick={() => setHeroSubModalTab("profile")} />
+            <TabButton active={heroSubModalTab === "gear"} label="Gear" onClick={() => setHeroSubModalTab("gear")} />
+            <TabButton active={heroSubModalTab === "skills"} label="Skills" onClick={() => setHeroSubModalTab("skills")} />
           </div>
-        ) : null}
 
-        {heroTab === "gear" ? <HeroGearEditor selectedUploadId={heroDetailUploadId} /> : null}
-        {heroTab === "skills" ? <HeroSkillsEditor selectedUploadId={heroDetailUploadId} /> : null}
+          {heroSubModalTab === "profile" ? (
+            <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+              <SectionCard title="Profile Card" subtitle="Social-profile style hero header">
+                <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
+                  {heroProfileImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={heroProfileImageUrl} alt="" className="h-[420px] w-full object-cover" />
+                  ) : (
+                    <div className="flex h-[420px] items-center justify-center text-sm text-white/35">No hero image loaded</div>
+                  )}
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Hero Stats" subtitle={heroProfileLoading ? "Loading…" : "Extract, review, then save"}>
+                {heroProfileErr ? (
+                  <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                    {heroProfileErr}
+                  </div>
+                ) : null}
+                {heroProfileMsg ? (
+                  <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">
+                    {heroProfileMsg}
+                  </div>
+                ) : null}
+
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void extractHeroProfile()}
+                    disabled={heroProfileExtracting || !selectedHeroUploadId}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 disabled:opacity-40"
+                  >
+                    {heroProfileExtracting ? "Extracting…" : "Extract from Image"}
+                  </button>
+                  <button
+                    onClick={() => void loadHeroProfile(selectedHeroUploadId)}
+                    disabled={heroProfileLoading}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80"
+                  >
+                    {heroProfileLoading ? "Loading…" : "Reload"}
+                  </button>
+                  <button
+                    onClick={() => void saveHeroProfile()}
+                    disabled={heroProfileSaving || !selectedHeroUploadId}
+                    className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100 disabled:opacity-40"
+                  >
+                    {heroProfileSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Name</div>
+                    <input
+                      value={heroProfile.name}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, name: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Level</div>
+                    <input
+                      value={heroProfile.level}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, level: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Stars</div>
+                    <input
+                      value={heroProfile.stars}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, stars: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Power</div>
+                    <input
+                      value={heroProfile.power}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, power: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Attack</div>
+                    <input
+                      value={heroProfile.attack}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, attack: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">HP</div>
+                    <input
+                      value={heroProfile.hp}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, hp: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">Defense</div>
+                    <input
+                      value={heroProfile.defense}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, defense: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs text-white/55">March Size</div>
+                    <input
+                      value={heroProfile.march_size}
+                      onChange={(e) => setHeroProfile((s) => ({ ...s, march_size: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                </div>
+              </SectionCard>
+            </div>
+          ) : null}
+
+          {heroSubModalTab === "gear" ? <HeroGearEditor selectedUploadId={selectedHeroUploadId} /> : null}
+          {heroSubModalTab === "skills" ? <HeroSkillsEditor selectedUploadId={selectedHeroUploadId} /> : null}
+        </div>
       </ModalShell>
 
       <ModalShell
         title="Drone"
         subtitle="Two-tab layout: Overview + Components, then Combat Boost + Skill Chips."
-        open={droneOpen}
         onClose={() => setDroneOpen(false)}
-        maxWidthClass="max-w-7xl"
+        open={droneOpen}
+        wide
       >
-        <div className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold text-white">Drone Uploads</div>
-            <div className="mt-1 text-sm text-white/55">{droneUploadsBusy ? "Loading…" : `${droneUploads.length} items`}</div>
+        <div className="space-y-6">
+          <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
+            <SectionCard title="Drone Screenshots" subtitle={loadingDroneUploads ? "Loading…" : `${droneUploads.length} uploads`}>
+              <div className="grid gap-3">
+                {droneUploads.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => setSelectedDroneUploadId(u.id)}
+                    className={cx(
+                      "rounded-3xl border p-3 text-left",
+                      selectedDroneUploadId === u.id ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-black/20"
+                    )}
+                  >
+                    <div className="text-sm font-medium text-white">Drone #{u.id}</div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
 
-            <div className="mt-4 grid gap-3">
-              {droneUploads.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => setSelectedDroneUploadId(u.id)}
-                  className={cn(
-                    "rounded-2xl border p-3 text-left",
-                    selectedDroneUploadId === u.id ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-black/20"
-                  )}
-                >
-                  <div className="text-sm font-medium text-white">Drone #{u.id}</div>
-                  <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+            <SectionCard title="Drone Workspace" subtitle={selectedDroneUpload ? `Selected upload #${selectedDroneUpload.id}` : "Pick a drone screenshot"}>
+              <div className="mb-4 flex flex-wrap gap-2">
+                <TabButton
+                  active={droneTab === "overview_components"}
+                  label="Overview + Components"
+                  onClick={() => setDroneTab("overview_components")}
+                />
+                <TabButton
+                  active={droneTab === "combat_chips"}
+                  label="Combat Boost + Skill Chips"
+                  onClick={() => setDroneTab("combat_chips")}
+                />
+              </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="mb-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => setDroneTab("overview_components")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  droneTab === "overview_components"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Overview + Components
-              </button>
-              <button
-                onClick={() => setDroneTab("combat_chips")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  droneTab === "combat_chips"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Combat Boost + Skill Chips
-              </button>
-            </div>
-
-            {droneTab === "overview_components" ? (
-              <div className="space-y-5">
-                <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
-                  {selectedDroneUpload?.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={selectedDroneUpload.url} alt="" className="h-[340px] w-full object-cover" />
+              {droneTab === "overview_components" ? (
+                <div className="space-y-5">
+                  <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
+                    {selectedDroneUpload?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={selectedDroneUpload.url} alt="" className="h-[340px] w-full object-cover" />
+                    ) : (
+                      <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No drone image selected</div>
+                    )}
+                  </div>
+                  {droneOwnerId ? (
+                    <DroneComponentsEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
                   ) : (
-                    <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No drone image selected</div>
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/50">
+                      Select a drone upload with a valid storage path so the drone owner id can be derived.
+                    </div>
                   )}
                 </div>
+              ) : null}
 
-                {droneOwnerId ? (
-                  <DroneComponentsEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
-                ) : (
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/50">
-                    Select a drone upload with a valid storage path first.
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {droneTab === "combat_chips" ? (
-              <div className="space-y-5">
-                {droneOwnerId ? (
-                  <DroneCombatBoostEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
-                ) : (
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/50">
-                    Select a drone upload with a valid storage path first.
-                  </div>
-                )}
-              </div>
-            ) : null}
+              {droneTab === "combat_chips" ? (
+                <div className="space-y-6">
+                  {droneOwnerId ? (
+                    <>
+                      <DroneCombatBoostEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
+                      <DroneBoostChipsEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/50">
+                      Select a drone upload with a valid storage path first.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </SectionCard>
           </div>
         </div>
       </ModalShell>
 
       <ModalShell
         title="Overlord"
-        subtitle="Profile-style modal for overview, skills, promote, bond, and train."
-        open={overlordOpen}
+        subtitle="Profile-style modal with progression sections for profile, skills, promote, bond, and train."
         onClose={() => setOverlordOpen(false)}
-        maxWidthClass="max-w-7xl"
+        open={overlordOpen}
+        wide
       >
-        <div className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-lg font-semibold text-white">Overlord Uploads</div>
-            <div className="mt-1 text-sm text-white/55">{overlordUploadsBusy ? "Loading…" : `${overlordUploads.length} items`}</div>
-
-            <div className="mt-4 grid gap-3">
-              {overlordUploads.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => setSelectedOverlordUploadId(u.id)}
-                  className={cn(
-                    "rounded-2xl border p-3 text-left",
-                    selectedOverlordUploadId === u.id ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-black/20"
-                  )}
-                >
-                  <div className="text-sm font-medium text-white">Overlord #{u.id}</div>
-                  <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="mb-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => setOverlordTab("overview")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  overlordTab === "overview"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => setOverlordTab("skills")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  overlordTab === "skills"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Skills
-              </button>
-              <button
-                onClick={() => setOverlordTab("promote")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  overlordTab === "promote"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Promote
-              </button>
-              <button
-                onClick={() => setOverlordTab("bond")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  overlordTab === "bond"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Bond
-              </button>
-              <button
-                onClick={() => setOverlordTab("train")}
-                className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm",
-                  overlordTab === "train"
-                    ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
-                    : "border-white/10 bg-white/5 text-white/70"
-                )}
-              >
-                Train
-              </button>
-            </div>
-
-            {overlordTab === "overview" ? (
-              <div className="space-y-5">
-                <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
-                  {selectedOverlordUpload?.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={selectedOverlordUpload.url} alt="" className="h-[340px] w-full object-cover" />
-                  ) : (
-                    <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No overlord image selected</div>
-                  )}
-                </div>
-                <OverlordProfileEditor selectedUploadId={selectedOverlordUploadId} />
+        <div className="space-y-6">
+          <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
+            <SectionCard title="Overlord Screenshots" subtitle={loadingOverlordUploads ? "Loading…" : `${overlordUploads.length} uploads`}>
+              <div className="grid gap-3">
+                {overlordUploads.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => setSelectedOverlordUploadId(u.id)}
+                    className={cx(
+                      "rounded-3xl border p-3 text-left",
+                      selectedOverlordUploadId === u.id ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-black/20"
+                    )}
+                  >
+                    <div className="text-sm font-medium text-white">Overlord #{u.id}</div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(u.created_at)}</div>
+                  </button>
+                ))}
               </div>
-            ) : null}
+            </SectionCard>
 
-            {overlordTab === "skills" ? <OverlordSkillsEditor selectedUploadId={selectedOverlordUploadId} /> : null}
-            {overlordTab === "promote" ? <OverlordPromoteEditor selectedUploadId={selectedOverlordUploadId} /> : null}
-            {overlordTab === "bond" ? <OverlordBondEditor selectedUploadId={selectedOverlordUploadId} /> : null}
-            {overlordTab === "train" ? <OverlordTrainEditor selectedUploadId={selectedOverlordUploadId} /> : null}
+            <SectionCard
+              title="Overlord Workspace"
+              subtitle={selectedOverlordUpload ? `Selected upload #${selectedOverlordUpload.id}` : "Pick an overlord screenshot"}
+            >
+              <div className="mb-4 flex flex-wrap gap-2">
+                <TabButton active={overlordTab === "overview"} label="Overview" onClick={() => setOverlordTab("overview")} />
+                <TabButton active={overlordTab === "skills"} label="Skills" onClick={() => setOverlordTab("skills")} />
+                <TabButton active={overlordTab === "promote"} label="Promote" onClick={() => setOverlordTab("promote")} />
+                <TabButton active={overlordTab === "bond"} label="Bond" onClick={() => setOverlordTab("bond")} />
+                <TabButton active={overlordTab === "train"} label="Train" onClick={() => setOverlordTab("train")} />
+              </div>
+
+              {overlordTab === "overview" ? (
+                <div className="space-y-5">
+                  <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
+                    {selectedOverlordUpload?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={selectedOverlordUpload.url} alt="" className="h-[340px] w-full object-cover" />
+                    ) : (
+                      <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No overlord image selected</div>
+                    )}
+                  </div>
+                  <OverlordProfileEditor selectedUploadId={selectedOverlordUploadId} />
+                </div>
+              ) : null}
+
+              {overlordTab === "skills" ? <OverlordSkillsEditor selectedUploadId={selectedOverlordUploadId} /> : null}
+              {overlordTab === "promote" ? <OverlordPromoteEditor selectedUploadId={selectedOverlordUploadId} /> : null}
+              {overlordTab === "bond" ? <OverlordBondEditor selectedUploadId={selectedOverlordUploadId} /> : null}
+              {overlordTab === "train" ? <OverlordTrainEditor selectedUploadId={selectedOverlordUploadId} /> : null}
+            </SectionCard>
           </div>
         </div>
       </ModalShell>
     </main>
   );
-            }
+          }
