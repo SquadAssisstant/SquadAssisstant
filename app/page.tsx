@@ -35,7 +35,7 @@ type HeroProfileValue = {
 };
 
 type HeroProfileDetailsResponse = {
-  ok: boolean;
+  ok?: boolean;
   image_url?: string | null;
   facts?: {
     value?: any;
@@ -52,6 +52,12 @@ type PlayerState = {
   squads?: {
     slots?: SquadSlot[];
   };
+};
+
+type PlayerStateResponse = {
+  ok?: boolean;
+  state?: PlayerState;
+  error?: string;
 };
 
 type UploadKind = "hero_profile" | "hero_skills" | "gear" | "drone" | "overlord" | "battle_report";
@@ -290,10 +296,16 @@ export default function Page() {
       const res = await fetch(`/api/uploads/list?kind=${encodeURIComponent(kind)}&limit=120`, {
         credentials: "include",
       });
-      const json = await safeJson<{ ok?: boolean; uploads?: UploadItem[]; error?: string }>(res);
+
+      const json = await safeJson<{
+        ok?: boolean;
+        uploads?: UploadItem[];
+        error?: string;
+      }>(res);
+
       if (!res.ok) continue;
 
-      const uploads = Array.isArray(json?.uploads) ? json.uploads : [];
+      const uploads: UploadItem[] = json && Array.isArray(json.uploads) ? json.uploads : [];
       for (const item of uploads) {
         merged.set(item.id, item);
       }
@@ -1200,4 +1212,4 @@ export default function Page() {
       </ModalShell>
     </main>
   );
-          }
+                     }
