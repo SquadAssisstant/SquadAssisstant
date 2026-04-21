@@ -632,7 +632,9 @@ export default function Page() {
         return;
       }
 
-      const groups = Array.isArray(json?.groups) ? json.groups : [];
+      const groups: BattleGroupSummary[] =
+        json && Array.isArray(json.groups) ? (json.groups as BattleGroupSummary[]) : [];
+
       setBattleGroups(groups);
 
       if (!selectedBattleGroupId && groups[0]) {
@@ -665,8 +667,12 @@ export default function Page() {
         return;
       }
 
-      setSelectedBattleGroup(json?.group ?? null);
-      setSelectedBattleGroupItems(Array.isArray(json?.items) ? json.items : []);
+      const group: BattleGroupSummary | null = json?.group ?? null;
+      const items: BattleGroupItem[] =
+        json && Array.isArray(json.items) ? (json.items as BattleGroupItem[]) : [];
+
+      setSelectedBattleGroup(group);
+      setSelectedBattleGroupItems(items);
     } catch (e: any) {
       setBattleGroupErr(e?.message ?? "Failed to load battle file");
     }
@@ -883,7 +889,9 @@ export default function Page() {
         return;
       }
 
-      const analyses = Array.isArray(json?.analyses) ? json.analyses : [];
+      const analyses: BattleAnalysisRow[] =
+        json && Array.isArray(json.analyses) ? (json.analyses as BattleAnalysisRow[]) : [];
+
       setBattleAnalyses(analyses);
       setBattleContextSummary(json?.context_summary ?? "");
       setBattleSummary(json?.summary ?? "");
@@ -1939,4 +1947,4 @@ export default function Page() {
       </ModalShell>
     </main>
   );
-  }
+}
