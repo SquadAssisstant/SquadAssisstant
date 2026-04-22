@@ -2474,7 +2474,7 @@ export default function Page() {
               files={optimizerSavedFiles}
               loading={loadingOptimizerSavedFiles}
               selectedId={selectedOptimizerSavedId}
-              onSelect={(id) => {
+                            onSelect={(id: string) => {
                 setSelectedOptimizerSavedId(id);
                 setOptimizerResult(null);
                 setOptimizerChatAnswer("");
