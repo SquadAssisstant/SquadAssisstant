@@ -870,7 +870,7 @@ export default function Page() {
     }
   }, []);
 
-  const loadOptimizerSavedFiles = useCallback(async () => {
+    const loadOptimizerSavedFiles = useCallback(async () => {
     setLoadingOptimizerSavedFiles(true);
     setOptimizerSavedErr(null);
     try {
@@ -878,12 +878,17 @@ export default function Page() {
         credentials: "include",
       });
       const json = await safeJson<SavedOptimizerListResponse>(res);
+
       if (!res.ok) {
         setOptimizerSavedErr(json?.error ?? `Failed to load saved optimizer files (${res.status})`);
         return;
       }
-      const files = Array.isArray(json?.files) ? json.files : [];
+
+      const files: SavedOptimizerFile[] =
+        json && Array.isArray(json.files) ? (json.files as SavedOptimizerFile[]) : [];
+
       setOptimizerSavedFiles(files);
+
       if (!selectedOptimizerSavedId && files[0]) {
         setSelectedOptimizerSavedId(String(files[0].id));
       }
