@@ -13,8 +13,12 @@ export async function POST(
 ) {
   try {
     const reportId = String(params?.reportId ?? "").trim();
+
     if (!reportId) {
-      return NextResponse.json({ ok: false, error: "Missing reportId" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Missing reportId" },
+        { status: 400 }
+      );
     }
 
     const sb: any = supabaseAdmin();
@@ -27,7 +31,7 @@ export async function POST(
 
     if (error) {
       return NextResponse.json(
-        { ok: false, error: error.message || "Failed to load battle report" },
+        { ok: false, error: error.message },
         { status: 500 }
       );
     }
@@ -40,8 +44,9 @@ export async function POST(
     }
 
     const body = await req.json().catch(() => ({}));
+
     const message =
-      typeof body?.message === "string" && body.message.trim()
+      typeof body?.message === "string"
         ? body.message.trim()
         : "Explain this report.";
 
@@ -61,7 +66,7 @@ export async function POST(
       `Question: ${message}`,
       "",
       "Battle analysis:",
-      summaryText || "No summary available.",
+      summaryText,
       "",
       `Context: ${contextSummary}`,
     ].join("\n");
@@ -70,8 +75,8 @@ export async function POST(
       ok: true,
       mode: "individual",
       reportId,
-      context: analysis?.context ?? context,
-      context_summary: analysis?.context_summary ?? contextSummary,
+      context,
+      context_summary: contextSummary,
       summary: summaryText,
       answer,
     });
