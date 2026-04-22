@@ -2567,7 +2567,7 @@ export default function Page() {
                 </div>
               ) : null}
 
-              {!optimizerResult && optimizerSavedDetail?.result ? (
+                            {!optimizerResult && optimizerSavedDetail && optimizerSavedResult ? (
                 <div className="space-y-5">
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                     <div className="text-xs uppercase tracking-[0.25em] text-white/45">Loaded Saved File</div>
@@ -2582,9 +2582,9 @@ export default function Page() {
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                     <div className="text-xs uppercase tracking-[0.25em] text-white/45">Saved Result Summary</div>
                     <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">
-                      {(optimizerSavedDetail.result.summary || []).join("\n")}
-                      {optimizerSavedDetail.result.assumptions?.length
-                        ? `\n\nAssumptions:\n${optimizerSavedDetail.result.assumptions.join("\n")}`
+                      {(optimizerSavedResult.summary || []).join("\n")}
+                      {optimizerSavedResult.assumptions?.length
+                        ? `\n\nAssumptions:\n${optimizerSavedResult.assumptions.join("\n")}`
                         : ""}
                     </pre>
                   </div>
