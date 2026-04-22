@@ -1,4 +1,14 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { sessionCookieName, verifySession } from "@/lib/session";
+
+function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(";").map((p) => p.trim());
+  for (const p of parts) {
+    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
+  }
+  return undefined;
+}
 
 function safeNum(v: any) {
   const n = Number(v);
@@ -27,6 +37,27 @@ function guessTroopType(raw: any) {
   return "unknown";
 }
 
+export async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
+  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
+  if (!token) return null;
+
+  try {
+    const session: any = await verifySession(token);
+    return { profileId: String(session.profileId) };
+  } catch {
+    return null;
+  }
+}
+
+export async function buildBattleContextFromRequest(req: Request) {
+  const session = await requireSessionFromReq(req);
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  return buildBattleCombatContext(session.profileId);
+}
+
 export async function buildBattleCombatContext(profileId: string) {
   const sb: any = supabaseAdmin();
 
@@ -50,7 +81,9 @@ export async function buildBattleCombatContext(profileId: string) {
     ])
     .order("updated_at", { ascending: false });
 
-  if (factsRes.error) throw new Error(factsRes.error.message);
+  if (factsRes.error) {
+    throw new Error(factsRes.error.message);
+  }
 
   const heroMap = new Map<string, any>();
   const drone: any = {};
@@ -181,4 +214,25 @@ export async function buildBattleCombatContext(profileId: string) {
       "Combat explanation should reference total stats, damage multipliers, morale, type advantages, lineup bonuses, and effective power.",
     ],
   };
+}
+
+export function summarizeBattleContext(context: any): string {
+  const heroes = Array.isArray(context?.heroes) ? context.heroes : [];
+  const droneReady = !!(context?.drone?.profile || context?.drone?.components || context?.drone?.combat_boost || context?.drone?.boost_chips);
+  const overlordReady = !!(context?.overlord?.profile || context?.overlord?.skills || context?.overlord?.promote || context?.overlord?.bond || context?.overlord?.train);
+
+  const lines: string[] = [];
+  lines.push(`Saved heroes loaded: ${heroes.length}`);
+  lines.push(`Drone data ready: ${droneReady ? "yes" : "no"}`);
+  lines.push(`Overlord data ready: ${overlordReady ? "yes" : "no"}`);
+
+  if (heroes.length) {
+    const sorted = [...heroes].sort((a, b) => Number(b?.base_stats?.power || 0) - Number(a?.base_stats?.power || 0));
+    const top = sorted.slice(0, 5).map((h) => h.name).filter(Boolean);
+    if (top.length) {
+      lines.push(`Top saved heroes: ${top.join(", ")}`);
+    }
+  }
+
+  return lines.join(" • ");
 }
