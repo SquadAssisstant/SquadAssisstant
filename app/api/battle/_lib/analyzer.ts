@@ -1,23 +1,100 @@
-import { getHeroCombatStats, getHeroPrimarySkillMultiplier, getHeroGearMultiplier, scoreHero } from "@/lib/combat/scoring";
-import { getLineupBonusMultiplier, getMoraleMultiplier } from "@/lib/combat/mathSpec";
-
 function safeNum(v: any) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-function summarizeHero(hero: any) {
-  const stats = getHeroCombatStats(hero);
+function getHeroGearMultiplier(hero: any): number {
+  const pieces = [
+    hero?.gear?.weapon,
+    hero?.gear?.data_chip,
+    hero?.gear?.armor,
+    hero?.gear?.radar,
+  ].filter(Boolean);
+
+  if (!pieces.length) return 1;
+
+  const totalPower = pieces.reduce((sum: number, p: any) => sum + safeNum(p?.power_bonus), 0);
+  const totalAtk = pieces.reduce((sum: number, p: any) => sum + safeNum(p?.atk_bonus), 0);
+  const totalDef = pieces.reduce((sum: number, p: any) => sum + safeNum(p?.def_bonus), 0);
+  const totalHp = pieces.reduce((sum: number, p: any) => sum + safeNum(p?.hp_bonus), 0);
+
+  const statShape = totalPower + totalAtk * 4 + totalDef * 3 + totalHp * 0.0025;
+  return 1 + Math.min(1.0, statShape / 100000);
+}
+
+function getHeroPrimarySkillMultiplier(hero: any): number {
+  const offensive = (Array.isArray(hero?.skills) ? hero.skills : [])
+    .filter((s: any) => (s?.kind === "tactical" || s?.kind === "auto") && safeNum(s?.multiplier_pct) > 0)
+    .sort((a: any, b: any) => safeNum(b?.multiplier_pct) - safeNum(a?.multiplier_pct));
+
+  if (offensive[0]) return Math.max(1, safeNum(offensive[0]?.multiplier_pct) / 100);
+  return 2.0;
+}
+
+function getHeroCombatStats(hero: any) {
+  const base = hero?.base_stats || {};
+  const weapon = hero?.gear?.weapon;
+  const dataChip = hero?.gear?.data_chip;
+  const armor = hero?.gear?.armor;
+  const radar = hero?.gear?.radar;
+
+  const atkBonus = safeNum(weapon?.atk_bonus) + safeNum(dataChip?.atk_bonus) + safeNum(armor?.atk_bonus) + safeNum(radar?.atk_bonus);
+  const defBonus = safeNum(weapon?.def_bonus) + safeNum(dataChip?.def_bonus) + safeNum(armor?.def_bonus) + safeNum(radar?.def_bonus);
+  const hpBonus = safeNum(weapon?.hp_bonus) + safeNum(dataChip?.hp_bonus) + safeNum(armor?.hp_bonus) + safeNum(radar?.hp_bonus);
+  const powerBonus =
+    safeNum(weapon?.power_bonus) + safeNum(dataChip?.power_bonus) + safeNum(armor?.power_bonus) + safeNum(radar?.power_bonus);
+
   return {
-    hero_key: hero.hero_key,
-    name: hero.name,
-    troop_type: hero.troop_type,
-    level: hero.level,
-    stars: hero.stars,
+    hp: safeNum(base.hp) + hpBonus,
+    atk: safeNum(base.atk) + atkBonus,
+    def: safeNum(base.def) + defBonus,
+    power: safeNum(base.power) + powerBonus,
+    morale: safeNum(base.morale) || 100,
+    march_size: safeNum(base.march_size),
+  };
+}
+
+function getMoraleMultiplier(yourMorale: number, enemyMorale = 100): number {
+  const raw = 1 + (yourMorale - enemyMorale) / 100;
+  return Math.max(1, Math.min(3, raw));
+}
+
+function getLineupBonusMultiplier(heroes: any[]): number {
+  const counts = heroes.reduce<Record<string, number>>((acc, h) => {
+    const t = String(h?.troop_type || "unknown");
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {});
+
+  const best = Math.max(...Object.values(counts), 0);
+  if (best >= 5) return 1.2;
+  if (best >= 4) return 1.15;
+  if (best >= 3) return 1.05;
+  return 1.0;
+}
+
+function scoreHero(hero: any) {
+  const stats = getHeroCombatStats(hero);
+  const skillMult = getHeroPrimarySkillMultiplier(hero);
+  const gearMult = getHeroGearMultiplier(hero);
+  const moraleMult = getMoraleMultiplier(stats.morale, 100);
+
+  const offence = stats.atk * skillMult * gearMult * moraleMult;
+  const defense = stats.def * gearMult;
+  const sustain = (stats.hp + stats.def * 12) * gearMult;
+  const effective_power = stats.power * gearMult * moraleMult;
+
+  return {
     stats,
-    skill_multiplier: getHeroPrimarySkillMultiplier(hero),
-    gear_multiplier: getHeroGearMultiplier(hero),
-    score: scoreHero(hero),
+    offence,
+    defense,
+    sustain,
+    effective_power,
+    total:
+      offence * 0.9 +
+      defense * 0.75 +
+      sustain * 0.85 +
+      effective_power * 0.65,
   };
 }
 
@@ -31,15 +108,25 @@ export function buildBattleAnalysisFromContext(input: {
 }) {
   const report = input.battleReport || {};
   const heroes = Array.isArray(input.context.heroes) ? input.context.heroes : [];
-  const summarizedHeroes = heroes.map(summarizeHero).sort((a, b) => b.score.total - a.score.total);
+  const summarizedHeroes = heroes
+    .map((hero) => {
+      const stats = getHeroCombatStats(hero);
+      return {
+        hero_key: hero.hero_key,
+        name: hero.name,
+        troop_type: hero.troop_type,
+        level: hero.level,
+        stars: hero.stars,
+        stats,
+        skill_multiplier: getHeroPrimarySkillMultiplier(hero),
+        gear_multiplier: getHeroGearMultiplier(hero),
+        score: scoreHero(hero),
+      };
+    })
+    .sort((a, b) => b.score.total - a.score.total);
 
   const likelyCore = summarizedHeroes.slice(0, 5);
-  const typeCounts = likelyCore.reduce<Record<string, number>>((acc, h) => {
-    acc[h.troop_type || "unknown"] = (acc[h.troop_type || "unknown"] || 0) + 1;
-    return acc;
-  }, {});
-  const bestSameTypeCount = Math.max(...Object.values(typeCounts), 0);
-  const lineupMultiplier = getLineupBonusMultiplier(bestSameTypeCount);
+  const lineupMultiplier = getLineupBonusMultiplier(likelyCore);
   const avgMorale = likelyCore.length
     ? likelyCore.reduce((sum, h) => sum + safeNum(h.stats.morale), 0) / likelyCore.length
     : 100;
@@ -83,4 +170,14 @@ export function buildBattleAnalysisFromContext(input: {
       overlord_ready: !!(input.context.overlord?.profile || input.context.overlord?.skills || input.context.overlord?.promote),
     },
   };
+}
+
+export function analyzeParsedReport(input: {
+  parsedReport: any;
+  context: any;
+}) {
+  return buildBattleAnalysisFromContext({
+    battleReport: input.parsedReport,
+    context: input.context,
+  });
 }
