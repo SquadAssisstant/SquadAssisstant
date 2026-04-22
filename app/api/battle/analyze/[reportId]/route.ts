@@ -7,12 +7,9 @@ import {
 } from "@/app/api/battle/_lib/context";
 import { analyzeParsedReport } from "@/app/api/battle/_lib/analyzer";
 
-export async function POST(
-  req: Request,
-  { params }: { params: { reportId: string } }
-) {
+export async function POST(req: Request, context: any) {
   try {
-    const reportId = String(params?.reportId ?? "").trim();
+    const reportId = String(context?.params?.reportId ?? "").trim();
 
     if (!reportId) {
       return NextResponse.json(
@@ -31,7 +28,7 @@ export async function POST(
 
     if (error) {
       return NextResponse.json(
-        { ok: false, error: error.message },
+        { ok: false, error: error.message || "Failed to load battle report" },
         { status: 500 }
       );
     }
@@ -44,18 +41,17 @@ export async function POST(
     }
 
     const body = await req.json().catch(() => ({}));
-
     const message =
-      typeof body?.message === "string"
+      typeof body?.message === "string" && body.message.trim()
         ? body.message.trim()
         : "Explain this report.";
 
-    const context = await buildBattleContextFromRequest(req);
-    const contextSummary = summarizeBattleContext(context);
+    const contextData = await buildBattleContextFromRequest(req);
+    const contextSummary = summarizeBattleContext(contextData);
 
     const analysis = analyzeParsedReport({
       parsedReport: row.parsed ?? {},
-      context,
+      context: contextData,
     });
 
     const summaryText = Array.isArray(analysis?.summary)
@@ -66,7 +62,7 @@ export async function POST(
       `Question: ${message}`,
       "",
       "Battle analysis:",
-      summaryText,
+      summaryText || "No summary available.",
       "",
       `Context: ${contextSummary}`,
     ].join("\n");
@@ -75,8 +71,8 @@ export async function POST(
       ok: true,
       mode: "individual",
       reportId,
-      context,
-      context_summary: contextSummary,
+      context: analysis?.context ?? contextData,
+      context_summary: analysis?.context_summary ?? contextSummary,
       summary: summaryText,
       answer,
     });
