@@ -769,15 +769,11 @@ export default function Page() {
     try {
       const items = await loadUploadsByKinds(OVERLORD_KINDS);
       setOverlordUploads(items);
-      if (!selectedOverlordUploadId && items[0]) setSelectedOverlordId(items[0].id);
+      if (!selectedOverlordUploadId && items[0]) setSelectedOverlordUploadId(items[0].id);
     } finally {
       setLoadingOverlordUploads(false);
     }
   }, [loadUploadsByKinds, selectedOverlordUploadId]);
-
-  const setSelectedOverlordId = useCallback((id: number | null) => {
-    setSelectedOverlordUploadId(id);
-  }, []);
 
   const loadBattleUploads = useCallback(async () => {
     setLoadingBattleUploads(true);
@@ -853,14 +849,20 @@ export default function Page() {
   const loadHeroesRoster = useCallback(async () => {
     setLoadingHeroesRoster(true);
     setHeroesRosterErr(null);
+
     try {
       const res = await fetch("/api/heroes", { credentials: "include" });
       const json = await safeJson<{ ok?: boolean; heroes?: HeroRosterListItem[]; error?: string }>(res);
+
       if (!res.ok) {
         setHeroesRosterErr(json?.error ?? `Failed to load heroes (${res.status})`);
         return;
       }
-      setHeroesRoster(Array.isArray(json?.heroes) ? json.heroes : []);
+
+      const heroes: HeroRosterListItem[] =
+        json && Array.isArray(json.heroes) ? json.heroes : [];
+
+      setHeroesRoster(heroes);
     } catch (e: any) {
       setHeroesRosterErr(e?.message ?? "Failed to load heroes");
     } finally {
