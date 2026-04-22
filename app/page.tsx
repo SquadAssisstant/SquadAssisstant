@@ -15,6 +15,9 @@ import { OverlordPromoteEditor } from "@/components/overlord/OverlordPromoteEdit
 import { OverlordBondEditor } from "@/components/overlord/OverlordBondEditor";
 import { OverlordTrainEditor } from "@/components/overlord/OverlordTrainEditor";
 
+import { HeroesModal } from "@/components/heroes/HeroesModal";
+import { OptimizerSavedRunsPanel } from "@/components/optimizer/OptimizerSavedRunsPanel";
+
 type UploadItem = {
   id: number;
   kind: string;
@@ -130,6 +133,129 @@ type BattleGroupDetailResponse = {
   error?: string;
 };
 
+type HeroRosterListItem = {
+  hero_key: string;
+  name: string;
+  troop_type: string;
+  level: number;
+  stars: number;
+  profile_upload_id: number | null;
+  image_url: string | null;
+  base_stats: {
+    hp: number;
+    atk: number;
+    def: number;
+    power: number;
+    morale: number;
+    march_size: number;
+  };
+  completeness: {
+    has_profile: boolean;
+    has_gear: boolean;
+    has_skills: boolean;
+  };
+};
+
+type OptimizerMode =
+  | "balanced"
+  | "highest_total_power"
+  | "pure_offence"
+  | "offence_leaning_sustain"
+  | "defense_leaning_sustain"
+  | "pure_defense";
+
+type OptimizerResult = {
+  mode: OptimizerMode;
+  squad_count: number;
+  locked_heroes: string[];
+  squads: Array<{
+    squad_number: number;
+    heroes: Array<{
+      hero_key: string;
+      name: string;
+      troop_type: string;
+      level: number;
+      stars: number;
+      base_stats: {
+        hp: number;
+        atk: number;
+        def: number;
+        power: number;
+        morale: number;
+        march_size: number;
+      };
+    }>;
+    placements: Array<{
+      slot: number;
+      hero_key: string;
+      hero_name: string;
+      troop_type: string;
+      assigned_role: string;
+      score_note: string;
+    }>;
+    gear_assignments: Array<{
+      hero_key: string;
+      slot: string;
+      piece: {
+        name: string | null;
+        level: number;
+        stars: number;
+      } | null;
+      reason: string;
+    }>;
+    scores: {
+      total: number;
+      offence: number;
+      defense: number;
+      sustain: number;
+      effective_power: number;
+    };
+    explanation: string[];
+  }>;
+  unused_heroes: Array<{
+    hero_key: string;
+    name: string;
+    reason: string;
+  }>;
+  summary: string[];
+  assumptions: string[];
+  context_snapshot: {
+    hero_count: number;
+    drone_ready: boolean;
+    overlord_ready: boolean;
+  };
+};
+
+type OptimizerRunResponse = {
+  ok?: boolean;
+  result?: OptimizerResult;
+  error?: string;
+};
+
+type SavedOptimizerFile = {
+  id: number;
+  label: string;
+  mode: string;
+  squad_count: number;
+  locked_heroes?: string[];
+  note?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  result?: OptimizerResult;
+};
+
+type SavedOptimizerListResponse = {
+  ok?: boolean;
+  files?: SavedOptimizerFile[];
+  error?: string;
+};
+
+type SavedOptimizerDetailResponse = {
+  ok?: boolean;
+  saved?: SavedOptimizerFile;
+  error?: string;
+};
+
 const HERO_KINDS = ["hero_profile", "hero"];
 const DRONE_KINDS = ["drone", "drone_profile", "drone_components", "drone_combat_boost", "drone_skill_chips"];
 const OVERLORD_KINDS = ["overlord", "lord", "over_lord"];
@@ -148,6 +274,15 @@ const UPLOAD_KIND_OPTIONS: Array<{ value: UploadKind; label: string }> = [
   { value: "overlord_training", label: "Overlord Training" },
   { value: "overlord_bond", label: "Overlord Bond" },
   { value: "battle_report", label: "Battle Report" },
+];
+
+const OPTIMIZER_MODE_OPTIONS: Array<{ value: OptimizerMode; label: string }> = [
+  { value: "balanced", label: "Balanced/Combat Sustainability" },
+  { value: "highest_total_power", label: "Highest Total Power Possible" },
+  { value: "pure_offence", label: "Best Pure Offence" },
+  { value: "offence_leaning_sustain", label: "Offence Leaning Combat Sustainability" },
+  { value: "defense_leaning_sustain", label: "Defense Leaning Combat Sustainability" },
+  { value: "pure_defense", label: "Best Pure Defense" },
 ];
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -410,10 +545,12 @@ function TabButton({
 
 export default function Page() {
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [heroesOpen, setHeroesOpen] = useState(false);
   const [squadsOpen, setSquadsOpen] = useState(false);
   const [droneOpen, setDroneOpen] = useState(false);
   const [overlordOpen, setOverlordOpen] = useState(false);
   const [battleOpen, setBattleOpen] = useState(false);
+  const [optimizerOpen, setOptimizerOpen] = useState(false);
 
   const [heroSubModalOpen, setHeroSubModalOpen] = useState(false);
 
@@ -473,6 +610,29 @@ export default function Page() {
   const [selectedBattleGroup, setSelectedBattleGroup] = useState<BattleGroupSummary | null>(null);
   const [selectedBattleGroupItems, setSelectedBattleGroupItems] = useState<BattleGroupItem[]>([]);
   const [battleGroupErr, setBattleGroupErr] = useState<string | null>(null);
+
+  const [heroesRoster, setHeroesRoster] = useState<HeroRosterListItem[]>([]);
+  const [loadingHeroesRoster, setLoadingHeroesRoster] = useState(false);
+  const [heroesRosterErr, setHeroesRosterErr] = useState<string | null>(null);
+
+  const [optimizerMode, setOptimizerMode] = useState<OptimizerMode>("balanced");
+  const [optimizerSquadCount, setOptimizerSquadCount] = useState(1);
+  const [optimizerLockedHeroes, setOptimizerLockedHeroes] = useState<string[]>([]);
+  const [optimizerBusy, setOptimizerBusy] = useState(false);
+  const [optimizerErr, setOptimizerErr] = useState<string | null>(null);
+  const [optimizerResult, setOptimizerResult] = useState<OptimizerResult | null>(null);
+
+  const [optimizerQuestion, setOptimizerQuestion] = useState("");
+  const [optimizerChatBusy, setOptimizerChatBusy] = useState(false);
+  const [optimizerChatAnswer, setOptimizerChatAnswer] = useState("");
+
+  const [optimizerSaveBusy, setOptimizerSaveBusy] = useState(false);
+  const [optimizerSaveMsg, setOptimizerSaveMsg] = useState<string | null>(null);
+  const [optimizerSavedFiles, setOptimizerSavedFiles] = useState<SavedOptimizerFile[]>([]);
+  const [loadingOptimizerSavedFiles, setLoadingOptimizerSavedFiles] = useState(false);
+  const [selectedOptimizerSavedId, setSelectedOptimizerSavedId] = useState<string>("");
+  const [optimizerSavedDetail, setOptimizerSavedDetail] = useState<SavedOptimizerFile | null>(null);
+  const [optimizerSavedErr, setOptimizerSavedErr] = useState<string | null>(null);
 
   const selectedHeroUpload = useMemo(
     () => heroUploads.find((u) => u.id === selectedHeroUploadId) ?? null,
@@ -545,6 +705,14 @@ export default function Page() {
     });
   }, [battleAnalyses, battleCustomBegin, battleCustomFinish, battleRange]);
 
+  const lockedHeroOptions = useMemo(() => {
+    return [...heroesRoster].sort((a, b) => {
+      const pa = Number(a.base_stats?.power || 0);
+      const pb = Number(b.base_stats?.power || 0);
+      return pb - pa || String(a.name).localeCompare(String(b.name));
+    });
+  }, [heroesRoster]);
+
   const loadUploadsByKinds = useCallback(async (kinds: string[]) => {
     const merged = new Map<number, UploadItem>();
 
@@ -601,11 +769,15 @@ export default function Page() {
     try {
       const items = await loadUploadsByKinds(OVERLORD_KINDS);
       setOverlordUploads(items);
-      if (!selectedOverlordUploadId && items[0]) setSelectedOverlordUploadId(items[0].id);
+      if (!selectedOverlordUploadId && items[0]) setSelectedOverlordId(items[0].id);
     } finally {
       setLoadingOverlordUploads(false);
     }
   }, [loadUploadsByKinds, selectedOverlordUploadId]);
+
+  const setSelectedOverlordId = useCallback((id: number | null) => {
+    setSelectedOverlordUploadId(id);
+  }, []);
 
   const loadBattleUploads = useCallback(async () => {
     setLoadingBattleUploads(true);
@@ -675,6 +847,74 @@ export default function Page() {
       setSelectedBattleGroupItems(items);
     } catch (e: any) {
       setBattleGroupErr(e?.message ?? "Failed to load battle file");
+    }
+  }, []);
+
+  const loadHeroesRoster = useCallback(async () => {
+    setLoadingHeroesRoster(true);
+    setHeroesRosterErr(null);
+    try {
+      const res = await fetch("/api/heroes", { credentials: "include" });
+      const json = await safeJson<{ ok?: boolean; heroes?: HeroRosterListItem[]; error?: string }>(res);
+      if (!res.ok) {
+        setHeroesRosterErr(json?.error ?? `Failed to load heroes (${res.status})`);
+        return;
+      }
+      setHeroesRoster(Array.isArray(json?.heroes) ? json.heroes : []);
+    } catch (e: any) {
+      setHeroesRosterErr(e?.message ?? "Failed to load heroes");
+    } finally {
+      setLoadingHeroesRoster(false);
+    }
+  }, []);
+
+  const loadOptimizerSavedFiles = useCallback(async () => {
+    setLoadingOptimizerSavedFiles(true);
+    setOptimizerSavedErr(null);
+    try {
+      const res = await fetch("/api/optimizer/saved?limit=100", {
+        credentials: "include",
+      });
+      const json = await safeJson<SavedOptimizerListResponse>(res);
+      if (!res.ok) {
+        setOptimizerSavedErr(json?.error ?? `Failed to load saved optimizer files (${res.status})`);
+        return;
+      }
+      const files = Array.isArray(json?.files) ? json.files : [];
+      setOptimizerSavedFiles(files);
+      if (!selectedOptimizerSavedId && files[0]) {
+        setSelectedOptimizerSavedId(String(files[0].id));
+      }
+    } catch (e: any) {
+      setOptimizerSavedErr(e?.message ?? "Failed to load saved optimizer files");
+    } finally {
+      setLoadingOptimizerSavedFiles(false);
+    }
+  }, [selectedOptimizerSavedId]);
+
+  const loadOptimizerSavedDetail = useCallback(async (savedId: string) => {
+    if (!savedId) {
+      setOptimizerSavedDetail(null);
+      return;
+    }
+
+    setOptimizerSavedErr(null);
+
+    try {
+      const res = await fetch(`/api/optimizer/saved?saved_id=${encodeURIComponent(savedId)}`, {
+        credentials: "include",
+      });
+      const json = await safeJson<SavedOptimizerDetailResponse>(res);
+
+      if (!res.ok) {
+        setOptimizerSavedErr(json?.error ?? `Failed to load saved optimizer file (${res.status})`);
+        return;
+      }
+
+      const saved = json?.saved ?? null;
+      setOptimizerSavedDetail(saved);
+    } catch (e: any) {
+      setOptimizerSavedErr(e?.message ?? "Failed to load saved optimizer file");
     }
   }, []);
 
@@ -867,12 +1107,13 @@ export default function Page() {
 
       await loadHeroProfile(selectedHeroUploadId);
       setHeroProfileMsg("Saved ✅");
+      await loadHeroesRoster();
     } catch (e: any) {
       setHeroProfileErr(e?.message ?? "Save failed");
     } finally {
       setHeroProfileSaving(false);
     }
-  }, [heroProfile, loadHeroProfile, selectedHeroUploadId]);
+  }, [heroProfile, loadHeroProfile, selectedHeroUploadId, loadHeroesRoster]);
 
   const loadBattleAnalyzerData = useCallback(async () => {
     setBattleBusy(true);
@@ -999,6 +1240,126 @@ export default function Page() {
     selectedBattleReportId,
   ]);
 
+  const runOptimizer = useCallback(async () => {
+    setOptimizerBusy(true);
+    setOptimizerErr(null);
+    setOptimizerSaveMsg(null);
+    setOptimizerChatAnswer("");
+
+    try {
+      const res = await fetch("/api/optimizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          mode: optimizerMode,
+          squad_count: optimizerSquadCount,
+          locked_heroes: optimizerLockedHeroes,
+        }),
+      });
+
+      const json = await safeJson<OptimizerRunResponse>(res);
+      if (!res.ok) {
+        setOptimizerErr(json?.error ?? `Optimizer failed (${res.status})`);
+        return;
+      }
+
+      setOptimizerResult(json?.result ?? null);
+    } catch (e: any) {
+      setOptimizerErr(e?.message ?? "Optimizer failed");
+    } finally {
+      setOptimizerBusy(false);
+    }
+  }, [optimizerLockedHeroes, optimizerMode, optimizerSquadCount]);
+
+  const askOptimizer = useCallback(async () => {
+    if (!optimizerQuestion.trim()) {
+      setOptimizerErr("Enter a question for the optimizer.");
+      return;
+    }
+
+    if (!optimizerResult && !selectedOptimizerSavedId) {
+      setOptimizerErr("Run or load an optimizer file first.");
+      return;
+    }
+
+    setOptimizerChatBusy(true);
+    setOptimizerErr(null);
+
+    try {
+      const res = await fetch("/api/optimizer/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(
+          selectedOptimizerSavedId && !optimizerResult
+            ? {
+                question: optimizerQuestion,
+                saved_optimizer_id: Number(selectedOptimizerSavedId),
+              }
+            : {
+                question: optimizerQuestion,
+                optimizer_result: optimizerResult,
+              }
+        ),
+      });
+
+      const json = await safeJson<{ ok?: boolean; answer?: string; error?: string }>(res);
+      if (!res.ok) {
+        setOptimizerErr(json?.error ?? `Optimizer chat failed (${res.status})`);
+        return;
+      }
+
+      setOptimizerChatAnswer(String(json?.answer ?? ""));
+    } catch (e: any) {
+      setOptimizerErr(e?.message ?? "Optimizer chat failed");
+    } finally {
+      setOptimizerChatBusy(false);
+    }
+  }, [optimizerQuestion, optimizerResult, selectedOptimizerSavedId]);
+
+  const saveOptimizerResult = useCallback(async () => {
+    if (!optimizerResult) {
+      setOptimizerErr("Run the optimizer first.");
+      return;
+    }
+
+    const label = window.prompt("Name this optimizer file:", "");
+    if (!label || !label.trim()) return;
+
+    setOptimizerSaveBusy(true);
+    setOptimizerErr(null);
+    setOptimizerSaveMsg(null);
+
+    try {
+      const res = await fetch("/api/optimizer/saved", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          label: label.trim(),
+          mode: optimizerResult.mode,
+          squad_count: optimizerResult.squad_count,
+          locked_heroes: optimizerResult.locked_heroes,
+          result: optimizerResult,
+        }),
+      });
+
+      const json = await safeJson<SavedOptimizerDetailResponse>(res);
+      if (!res.ok) {
+        setOptimizerErr(json?.error ?? `Failed to save optimizer file (${res.status})`);
+        return;
+      }
+
+      setOptimizerSaveMsg(`Optimizer file saved: ${label.trim()}`);
+      await loadOptimizerSavedFiles();
+    } catch (e: any) {
+      setOptimizerErr(e?.message ?? "Failed to save optimizer file");
+    } finally {
+      setOptimizerSaveBusy(false);
+    }
+  }, [optimizerResult, loadOptimizerSavedFiles]);
+
   const submitUploads = useCallback(async () => {
     if (!uploadFiles.length) {
       setUploadErr("Choose at least one screenshot first.");
@@ -1067,6 +1428,7 @@ export default function Page() {
 
       if (apiKind === "hero_profile" || apiKind === "hero_skills" || apiKind === "gear") {
         await loadHeroUploads();
+        await loadHeroesRoster();
       }
       if (apiKind === "drone") {
         await loadDroneUploads();
@@ -1090,6 +1452,7 @@ export default function Page() {
     loadBattleUploads,
     loadDroneUploads,
     loadHeroUploads,
+    loadHeroesRoster,
     loadOverlordUploads,
     uploadFiles,
     uploadKind,
@@ -1101,8 +1464,19 @@ export default function Page() {
     void loadOverlordUploads();
     void loadBattleUploads();
     void loadBattleGroups();
+    void loadHeroesRoster();
+    void loadOptimizerSavedFiles();
     void loadPlayerState();
-  }, [loadBattleGroups, loadBattleUploads, loadDroneUploads, loadHeroUploads, loadOverlordUploads, loadPlayerState]);
+  }, [
+    loadBattleGroups,
+    loadBattleUploads,
+    loadDroneUploads,
+    loadHeroUploads,
+    loadHeroesRoster,
+    loadOptimizerSavedFiles,
+    loadOverlordUploads,
+    loadPlayerState,
+  ]);
 
   useEffect(() => {
     if (heroSubModalOpen) {
@@ -1118,6 +1492,13 @@ export default function Page() {
   }, [battleOpen, loadBattleAnalyzerData, loadBattleGroups]);
 
   useEffect(() => {
+    if (optimizerOpen) {
+      void loadHeroesRoster();
+      void loadOptimizerSavedFiles();
+    }
+  }, [optimizerOpen, loadHeroesRoster, loadOptimizerSavedFiles]);
+
+  useEffect(() => {
     if (selectedBattleGroupId) {
       void loadBattleGroupDetail(selectedBattleGroupId);
     } else {
@@ -1125,6 +1506,14 @@ export default function Page() {
       setSelectedBattleGroupItems([]);
     }
   }, [loadBattleGroupDetail, selectedBattleGroupId]);
+
+  useEffect(() => {
+    if (selectedOptimizerSavedId) {
+      void loadOptimizerSavedDetail(selectedOptimizerSavedId);
+    } else {
+      setOptimizerSavedDetail(null);
+    }
+  }, [loadOptimizerSavedDetail, selectedOptimizerSavedId]);
 
   return (
     <main className="min-h-screen bg-[#060b14] text-white">
@@ -1134,16 +1523,18 @@ export default function Page() {
             <div>
               <div className="text-3xl font-semibold tracking-tight text-white md:text-4xl">SquadAssistant</div>
               <div className="mt-2 max-w-3xl text-sm text-white/55 md:text-base">
-                Home launcher for uploads, squads, hero profile submodal, drone, overlord, and battle report analyzer.
+                Home launcher for uploads, heroes, squads, hero profile submodal, drone, overlord, battle report analyzer, and optimizer.
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
               <AppCard title="Upload" subtitle="Add and review screenshots" onClick={() => setUploadOpen(true)} />
+              <AppCard title="Heroes" subtitle="Full owned roster" onClick={() => setHeroesOpen(true)} />
               <AppCard title="Squads" subtitle="Assign heroes and open profiles" onClick={() => setSquadsOpen(true)} />
               <AppCard title="Drone" subtitle="Overview, components, boost, chips" onClick={() => setDroneOpen(true)} />
               <AppCard title="Overlord" subtitle="Profile, skills, bond, train" onClick={() => setOverlordOpen(true)} />
               <AppCard title="Battle Reports" subtitle="Analyze report data" onClick={() => setBattleOpen(true)} />
+              <AppCard title="Optimizer" subtitle="Best squad spread builder" onClick={() => setOptimizerOpen(true)} />
             </div>
           </div>
 
@@ -1181,10 +1572,10 @@ export default function Page() {
             </SectionCard>
 
             <SectionCard title="Library Snapshot" subtitle="Quick count of currently loaded screenshot groups">
-              <div className="grid gap-3 sm:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-5">
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div className="text-xs uppercase tracking-[0.25em] text-white/45">Heroes</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{heroUploads.length}</div>
+                  <div className="mt-2 text-3xl font-semibold text-white">{heroesRoster.length || heroUploads.length}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone</div>
@@ -1198,11 +1589,26 @@ export default function Page() {
                   <div className="text-xs uppercase tracking-[0.25em] text-white/45">Battle Files</div>
                   <div className="mt-2 text-3xl font-semibold text-white">{battleGroups.length}</div>
                 </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Optimizer Files</div>
+                  <div className="mt-2 text-3xl font-semibold text-white">{optimizerSavedFiles.length}</div>
+                </div>
               </div>
             </SectionCard>
           </div>
         </div>
       </div>
+
+      <HeroesModal
+        open={heroesOpen}
+        onClose={() => setHeroesOpen(false)}
+        onOpenHero={(uploadId) => {
+          if (!uploadId) return;
+          setSelectedHeroUploadId(uploadId);
+          setHeroSubModalTab("profile");
+          setHeroSubModalOpen(true);
+        }}
+      />
 
       <ModalShell
         title="Uploads"
@@ -1943,6 +2349,264 @@ export default function Page() {
               </div>
             </SectionCard>
           </div>
+        </div>
+      </ModalShell>
+
+      <ModalShell
+        title="Optimizer"
+        subtitle="Build the best legal squad spread from your full owned roster, then save and chat about the result."
+        onClose={() => setOptimizerOpen(false)}
+        open={optimizerOpen}
+        wide
+      >
+        <div className="space-y-6">
+          {optimizerErr ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{optimizerErr}</div>
+          ) : null}
+          {optimizerSavedErr ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{optimizerSavedErr}</div>
+          ) : null}
+          {optimizerSaveMsg ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/75">{optimizerSaveMsg}</div>
+          ) : null}
+          {heroesRosterErr ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{heroesRosterErr}</div>
+          ) : null}
+
+          <SectionCard title="Optimizer Controls" subtitle="Choose your optimization style, squad count, and optional locked heroes">
+            <div className="grid gap-4 xl:grid-cols-[260px_180px_1fr]">
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Mode</div>
+                <select
+                  value={optimizerMode}
+                  onChange={(e) => setOptimizerMode(e.target.value as OptimizerMode)}
+                  className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                >
+                  {OPTIMIZER_MODE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Squads</div>
+                <select
+                  value={optimizerSquadCount}
+                  onChange={(e) => setOptimizerSquadCount(Number(e.target.value))}
+                  className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                >
+                  <option value={1}>1 Squad</option>
+                  <option value={2}>2 Squads</option>
+                  <option value={3}>3 Squads</option>
+                  <option value={4}>4 Squads</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Lock Specific Heroes</div>
+                <select
+                  multiple
+                  value={optimizerLockedHeroes}
+                  onChange={(e) => {
+                    const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                    setOptimizerLockedHeroes(values);
+                  }}
+                  className="mt-2 min-h-[120px] w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+                >
+                  {lockedHeroOptions.map((hero) => (
+                    <option key={hero.hero_key} value={hero.hero_key}>
+                      {hero.name} • {hero.troop_type} • Power {hero.base_stats?.power || 0}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2 text-xs text-white/45">
+                  Locked heroes stay in the optimization pool and are forced into the output if legal.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => void runOptimizer()}
+                disabled={optimizerBusy || loadingHeroesRoster}
+                className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 disabled:opacity-40"
+              >
+                {optimizerBusy ? "Optimizing…" : "Run Optimizer"}
+              </button>
+
+              <button
+                onClick={() => void saveOptimizerResult()}
+                disabled={optimizerSaveBusy || !optimizerResult}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 disabled:opacity-40"
+              >
+                {optimizerSaveBusy ? "Saving…" : "Save Optimizer File"}
+              </button>
+
+              <button
+                onClick={() => {
+                  setOptimizerLockedHeroes([]);
+                  setOptimizerResult(null);
+                  setOptimizerChatAnswer("");
+                  setOptimizerErr(null);
+                  setOptimizerSaveMsg(null);
+                }}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80"
+              >
+                Clear Current Result
+              </button>
+            </div>
+          </SectionCard>
+
+          <div className="grid gap-6 xl:grid-cols-[0.75fr_1.25fr]">
+            <OptimizerSavedRunsPanel
+              files={optimizerSavedFiles}
+              loading={loadingOptimizerSavedFiles}
+              selectedId={selectedOptimizerSavedId}
+              onSelect={(id) => {
+                setSelectedOptimizerSavedId(id);
+                setOptimizerResult(null);
+                setOptimizerChatAnswer("");
+              }}
+            />
+
+            <SectionCard title="Optimizer Output" subtitle="Live result or loaded saved optimizer file">
+              {!optimizerResult && !optimizerSavedDetail ? (
+                <div className="text-sm text-white/50">Run the optimizer or select a saved optimizer file.</div>
+              ) : null}
+
+              {optimizerResult ? (
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Summary</div>
+                    <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">
+                      {(optimizerResult.summary || []).join("\n")}
+                      {optimizerResult.assumptions?.length ? `\n\nAssumptions:\n${optimizerResult.assumptions.join("\n")}` : ""}
+                    </pre>
+                  </div>
+
+                  {optimizerResult.squads.map((squad) => (
+                    <div key={squad.squad_number} className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                      <div className="text-lg font-semibold text-white">Squad {squad.squad_number}</div>
+                      <div className="mt-2 grid gap-2 text-sm text-white/75 md:grid-cols-4">
+                        <div>Total: {Math.round(squad.scores.total)}</div>
+                        <div>Offence: {Math.round(squad.scores.offence)}</div>
+                        <div>Defense: {Math.round(squad.scores.defense)}</div>
+                        <div>Sustain: {Math.round(squad.scores.sustain)}</div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-5">
+                        {squad.placements.map((p) => {
+                          const hero = squad.heroes.find((h) => h.hero_key === p.hero_key);
+                          return (
+                            <div key={`${squad.squad_number}-${p.slot}-${p.hero_key}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                              <div className="text-xs uppercase tracking-[0.2em] text-white/45">Slot {p.slot}</div>
+                              <div className="mt-2 text-sm font-medium text-white">{p.hero_name}</div>
+                              <div className="mt-1 text-xs text-white/50">{p.assigned_role}</div>
+                              <div className="mt-2 text-xs text-white/65">
+                                {hero ? `Lv ${hero.level} • ${hero.troop_type}` : p.troop_type}
+                              </div>
+                              <div className="mt-2 text-xs text-white/60">{p.score_note}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                          <div className="text-sm font-medium text-white">Gear Assignment</div>
+                          <div className="mt-3 grid gap-2">
+                            {squad.gear_assignments.map((g, idx) => (
+                              <div key={`${g.hero_key}-${g.slot}-${idx}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                                <div className="text-sm text-white">
+                                  {g.hero_key} • {g.slot}
+                                </div>
+                                <div className="mt-1 text-xs text-white/50">
+                                  {g.piece ? `${g.piece.name ?? "Gear"} • Lv ${g.piece.level} • ${g.piece.stars}★` : "No piece assigned"}
+                                </div>
+                                <div className="mt-2 text-xs text-white/60">{g.reason}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                          <div className="text-sm font-medium text-white">Why This Squad</div>
+                          <pre className="mt-3 whitespace-pre-wrap text-sm text-white/75">
+                            {(squad.explanation || []).join("\n")}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {optimizerResult.unused_heroes?.length ? (
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="text-sm font-medium text-white">Unused Heroes</div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {optimizerResult.unused_heroes.map((u) => (
+                          <div key={u.hero_key} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <div className="text-sm text-white">{u.name}</div>
+                            <div className="mt-1 text-xs text-white/55">{u.reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!optimizerResult && optimizerSavedDetail?.result ? (
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Loaded Saved File</div>
+                    <div className="mt-2 text-sm text-white">
+                      {optimizerSavedDetail.label} • {optimizerSavedDetail.mode} • {optimizerSavedDetail.squad_count} squad
+                      {optimizerSavedDetail.squad_count === 1 ? "" : "s"}
+                    </div>
+                    <div className="mt-1 text-xs text-white/45">{fmtDate(optimizerSavedDetail.created_at)}</div>
+                    {optimizerSavedDetail.note ? <div className="mt-2 text-xs text-white/60">{optimizerSavedDetail.note}</div> : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Saved Result Summary</div>
+                    <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">
+                      {(optimizerSavedDetail.result.summary || []).join("\n")}
+                      {optimizerSavedDetail.result.assumptions?.length
+                        ? `\n\nAssumptions:\n${optimizerSavedDetail.result.assumptions.join("\n")}`
+                        : ""}
+                    </pre>
+                  </div>
+                </div>
+              ) : null}
+            </SectionCard>
+          </div>
+
+          <SectionCard title="Optimizer Chat" subtitle="Ask why the optimizer chose this layout, placement, or gear assignment">
+            <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+              <input
+                value={optimizerQuestion}
+                onChange={(e) => setOptimizerQuestion(e.target.value)}
+                placeholder='ex: Why is this hero in slot 1? Why did you assign that radar there?'
+                className="w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+              />
+              <button
+                onClick={() => void askOptimizer()}
+                disabled={optimizerChatBusy || (!optimizerResult && !selectedOptimizerSavedId)}
+                className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 disabled:opacity-40"
+              >
+                {optimizerChatBusy ? "Thinking…" : "Ask Optimizer"}
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="text-xs uppercase tracking-[0.25em] text-white/45">Explanation</div>
+              <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">
+                {optimizerChatAnswer || "No optimizer explanation yet."}
+              </pre>
+            </div>
+          </SectionCard>
         </div>
       </ModalShell>
     </main>
