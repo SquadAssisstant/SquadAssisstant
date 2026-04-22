@@ -846,7 +846,7 @@ export default function Page() {
     }
   }, []);
 
-  const loadHeroesRoster = useCallback(async () => {
+    const loadHeroesRoster = useCallback(async () => {
     setLoadingHeroesRoster(true);
     setHeroesRosterErr(null);
 
@@ -860,7 +860,7 @@ export default function Page() {
       }
 
       const heroes: HeroRosterListItem[] =
-        json && Array.isArray(json.heroes) ? json.heroes : [];
+        json && Array.isArray(json.heroes) ? (json.heroes as HeroRosterListItem[]) : [];
 
       setHeroesRoster(heroes);
     } catch (e: any) {
