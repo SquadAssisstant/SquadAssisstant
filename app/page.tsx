@@ -712,7 +712,10 @@ export default function Page() {
       return pb - pa || String(a.name).localeCompare(String(b.name));
     });
   }, [heroesRoster]);
-
+  const optimizerSavedResult = useMemo(
+    () => optimizerSavedDetail?.result ?? null,
+    [optimizerSavedDetail]
+  );
   const loadUploadsByKinds = useCallback(async (kinds: string[]) => {
     const merged = new Map<number, UploadItem>();
 
