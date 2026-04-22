@@ -1,236 +1,184 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { sessionCookieName, verifySession } from "@/lib/session";
 
-export type SessionLite = { profileId: string };
-
-export type BattleContext = {
-  profile_id: string;
-  squad_slots: Array<{ slot: number; hero_upload_id: number | null }>;
-  heroes: Record<
-    string,
-    {
-      profile: any | null;
-      gear: any | null;
-      skills: any | null;
-    }
-  >;
-  drone: {
-    components: any | null;
-    combat_boost: any | null;
-    boost_chips: any | null;
-  };
-  overlord: {
-    profile: any | null;
-    skills: any | null;
-    promote: any | null;
-    bond: any | null;
-    train: any | null;
-  };
-};
-
-function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
-  if (!cookieHeader) return undefined;
-  const parts = cookieHeader.split(";").map((p) => p.trim());
-  for (const p of parts) {
-    if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
-  }
-  return undefined;
+function safeNum(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
-export async function requireSessionFromReq(req: Request): Promise<SessionLite | null> {
-  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
-  if (!token) return null;
-
-  try {
-    const s = await verifySession(token);
-    return { profileId: String((s as any).profileId) };
-  } catch {
-    return null;
-  }
+function normKey(v: any) {
+  return String(v ?? "").trim().toLowerCase();
 }
 
-async function fetchPlayerState(req: Request): Promise<any | null> {
-  try {
-    const origin = new URL(req.url).origin;
-    const cookie = req.headers.get("cookie") ?? "";
-    const res = await fetch(`${origin}/api/player/state`, {
-      headers: { cookie },
-      cache: "no-store",
-    });
-
-    const text = await res.text().catch(() => "");
-    if (!text) return null;
-
-    const json = JSON.parse(text);
-    if (!res.ok) return null;
-    return json?.state ?? null;
-  } catch {
-    return null;
-  }
+function titleCase(v: any) {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  return s
+    .split(/[\s_-]+/)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
-function normalizeSquadSlots(state: any): Array<{ slot: number; hero_upload_id: number | null }> {
-  const raw = state?.squads?.slots;
-  if (Array.isArray(raw) && raw.length) {
-    return raw
-      .map((s: any, idx: number) => ({
-        slot: Number(s?.slot ?? idx + 1),
-        hero_upload_id: Number.isFinite(Number(s?.hero_upload_id)) ? Number(s.hero_upload_id) : null,
-      }))
-      .slice(0, 20);
-  }
-
-  return [];
+function guessTroopType(raw: any) {
+  const s = normKey(raw);
+  if (s.includes("tank")) return "tank";
+  if (s.includes("missile")) return "missile";
+  if (s.includes("air")) return "aircraft";
+  if (s.includes("aircraft")) return "aircraft";
+  return "unknown";
 }
 
-function valueUploadId(value: any): string | null {
-  const v = value?.source_upload_id;
-  if (v == null) return null;
-  const s = String(v).trim();
-  return s || null;
-}
+export async function buildBattleCombatContext(profileId: string) {
+  const sb: any = supabaseAdmin();
 
-export async function buildBattleContextFromRequest(req: Request, profileId: string): Promise<BattleContext> {
-  const sb = supabaseAdmin() as any;
-  const state = await fetchPlayerState(req);
-  const squad_slots = normalizeSquadSlots(state);
-
-  const domains = [
-    "hero_profile",
-    "hero_gear",
-    "hero_skills",
-    "drone_components",
-    "drone_combat_boost",
-    "drone_boost_chips",
-    "overlord_profile",
-    "overlord_skills",
-    "overlord_promote",
-    "overlord_bond",
-    "overlord_train",
-  ];
-
-  const { data, error } = await sb
+  const factsRes = await sb
     .from("facts")
     .select("domain, key, value, updated_at")
     .eq("created_by_profile_id", profileId)
-    .in("domain", domains)
+    .in("domain", [
+      "hero_profile",
+      "hero_gear",
+      "hero_skills",
+      "drone_profile",
+      "drone_components",
+      "drone_combat_boost",
+      "drone_boost_chips",
+      "overlord_profile",
+      "overlord_skills",
+      "overlord_promote",
+      "overlord_bond",
+      "overlord_train",
+    ])
     .order("updated_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (factsRes.error) throw new Error(factsRes.error.message);
 
-  const rows: any[] = Array.isArray(data) ? data : [];
+  const heroMap = new Map<string, any>();
+  const drone: any = {};
+  const overlord: any = {};
 
-  const heroes: BattleContext["heroes"] = {};
-  const drone: BattleContext["drone"] = {
-    components: null,
-    combat_boost: null,
-    boost_chips: null,
-  };
-  const overlord: BattleContext["overlord"] = {
-    profile: null,
-    skills: null,
-    promote: null,
-    bond: null,
-    train: null,
-  };
+  function ensureHero(heroKey: string, name: string) {
+    const existing = heroMap.get(heroKey);
+    if (existing) return existing;
 
-  for (const row of rows) {
-    const domain = String(row?.domain ?? "");
-    const value = row?.value ?? null;
+    const next = {
+      hero_key: heroKey,
+      name: name || titleCase(heroKey),
+      troop_type: "unknown",
+      level: 0,
+      stars: 0,
+      base_stats: {
+        hp: 0,
+        atk: 0,
+        def: 0,
+        power: 0,
+        morale: 100,
+        march_size: 0,
+      },
+      gear: {
+        weapon: null,
+        data_chip: null,
+        armor: null,
+        radar: null,
+      },
+      skills: [],
+      completeness: {
+        has_profile: false,
+        has_gear: false,
+        has_skills: false,
+      },
+    };
 
-    if (domain === "hero_profile" || domain === "hero_gear" || domain === "hero_skills") {
-      const uploadId = valueUploadId(value) ?? row?.key ?? "";
-      if (!heroes[uploadId]) {
-        heroes[uploadId] = {
-          profile: null,
-          gear: null,
-          skills: null,
-        };
-      }
+    heroMap.set(heroKey, next);
+    return next;
+  }
 
-      if (domain === "hero_profile") heroes[uploadId].profile = value;
-      if (domain === "hero_gear") heroes[uploadId].gear = value;
-      if (domain === "hero_skills") heroes[uploadId].skills = value;
-      continue;
-    }
+  for (const fact of factsRes.data ?? []) {
+    const domain = String(fact.domain || "");
+    const v = fact.value || {};
 
-    if (domain === "drone_components") {
-      drone.components = drone.components ?? value;
-      continue;
-    }
-    if (domain === "drone_combat_boost") {
-      drone.combat_boost = drone.combat_boost ?? value;
-      continue;
-    }
-    if (domain === "drone_boost_chips") {
-      drone.boost_chips = drone.boost_chips ?? value;
+    if (domain.startsWith("drone_")) {
+      if (domain === "drone_profile") drone.profile = v;
+      if (domain === "drone_components") drone.components = v;
+      if (domain === "drone_combat_boost") drone.combat_boost = v;
+      if (domain === "drone_boost_chips") drone.boost_chips = v;
       continue;
     }
 
-    if (domain === "overlord_profile") {
-      overlord.profile = overlord.profile ?? value;
+    if (domain.startsWith("overlord_")) {
+      if (domain === "overlord_profile") overlord.profile = v;
+      if (domain === "overlord_skills") overlord.skills = v;
+      if (domain === "overlord_promote") overlord.promote = v;
+      if (domain === "overlord_bond") overlord.bond = v;
+      if (domain === "overlord_train") overlord.train = v;
       continue;
     }
-    if (domain === "overlord_skills") {
-      overlord.skills = overlord.skills ?? value;
-      continue;
+
+    const heroKey = normKey(v.hero_key || v.name || fact.key?.split(":").pop());
+    if (!heroKey) continue;
+
+    const hero = ensureHero(heroKey, titleCase(v.name || heroKey));
+
+    if (domain === "hero_profile") {
+      hero.name = titleCase(v.name || hero.name);
+      hero.level = safeNum(v.level);
+      hero.stars = safeNum(v.stars);
+      hero.base_stats.hp = safeNum(v.stats?.hp);
+      hero.base_stats.atk = safeNum(v.stats?.attack);
+      hero.base_stats.def = safeNum(v.stats?.defense);
+      hero.base_stats.power = safeNum(v.power);
+      hero.base_stats.march_size = safeNum(v.stats?.march_size);
+      hero.base_stats.morale = safeNum(v.morale) || 100;
+      hero.troop_type = guessTroopType(v.troop_type || v.class_type || v.type);
+      hero.completeness.has_profile = true;
     }
-    if (domain === "overlord_promote") {
-      overlord.promote = overlord.promote ?? value;
-      continue;
+
+    if (domain === "hero_gear") {
+      const pieces = v.pieces || v.gear || {};
+      const normPiece = (raw: any, slot: "weapon" | "data_chip" | "armor" | "radar") =>
+        raw
+          ? {
+              id: `${heroKey}:${slot}:${String(raw.name || "gear").toLowerCase()}`,
+              slot,
+              name: raw.name ? String(raw.name) : null,
+              stars: safeNum(raw.stars),
+              level: safeNum(raw.level),
+              atk_bonus: safeNum(raw.atk_bonus || raw.attack || raw.attack_bonus),
+              hp_bonus: safeNum(raw.hp_bonus || raw.hp || raw.health_bonus),
+              def_bonus: safeNum(raw.def_bonus || raw.defense || raw.defense_bonus),
+              power_bonus: safeNum(raw.power_bonus || raw.power),
+            }
+          : null;
+
+      hero.gear.weapon = normPiece(pieces.weapon, "weapon");
+      hero.gear.data_chip = normPiece(pieces.data_chip, "data_chip");
+      hero.gear.armor = normPiece(pieces.armor, "armor");
+      hero.gear.radar = normPiece(pieces.radar, "radar");
+      hero.completeness.has_gear = !!(hero.gear.weapon || hero.gear.data_chip || hero.gear.armor || hero.gear.radar);
     }
-    if (domain === "overlord_bond") {
-      overlord.bond = overlord.bond ?? value;
-      continue;
-    }
-    if (domain === "overlord_train") {
-      overlord.train = overlord.train ?? value;
-      continue;
+
+    if (domain === "hero_skills") {
+      const skillsRaw = Array.isArray(v.skills) ? v.skills : [];
+      hero.skills = skillsRaw.map((raw: any, idx: number) => ({
+        id: `${heroKey}:skill:${idx + 1}`,
+        name: raw?.name ? String(raw.name) : null,
+        level: safeNum(raw?.level),
+        multiplier_pct: safeNum(raw?.multiplier_pct || raw?.multiplier || raw?.damage_pct),
+        effect_summary: raw?.effect_summary ? String(raw.effect_summary) : raw?.summary ? String(raw.summary) : null,
+        kind: ["auto", "tactical", "passive"].includes(String(raw?.kind || "").toLowerCase())
+          ? String(raw.kind).toLowerCase()
+          : "unknown",
+      }));
+      hero.completeness.has_skills = hero.skills.length > 0;
     }
   }
 
   return {
-    profile_id: profileId,
-    squad_slots,
-    heroes,
+    heroes: Array.from(heroMap.values()),
     drone,
     overlord,
+    shared_notes: [
+      "Battle analyzer uses saved player data plus combat math formulas.",
+      "Combat explanation should reference total stats, damage multipliers, morale, type advantages, lineup bonuses, and effective power.",
+    ],
   };
-}
-
-export function summarizeBattleContext(context: BattleContext): string {
-  const heroIds = Object.keys(context.heroes);
-  const assignedHeroes = context.squad_slots.filter((s) => s.hero_upload_id != null).length;
-
-  const pieces: string[] = [];
-  pieces.push(`Assigned squad slots: ${assignedHeroes}`);
-  pieces.push(`Hero records loaded: ${heroIds.length}`);
-
-  const heroProfiles = heroIds.filter((id) => context.heroes[id]?.profile).length;
-  const heroGear = heroIds.filter((id) => context.heroes[id]?.gear).length;
-  const heroSkills = heroIds.filter((id) => context.heroes[id]?.skills).length;
-
-  pieces.push(`Hero profiles: ${heroProfiles}`);
-  pieces.push(`Hero gear sets: ${heroGear}`);
-  pieces.push(`Hero skills sets: ${heroSkills}`);
-
-  pieces.push(
-    `Drone data: ${
-      [context.drone.components, context.drone.combat_boost, context.drone.boost_chips].filter(Boolean).length
-    }/3`
-  );
-
-  pieces.push(
-    `Overlord data: ${
-      [
-        context.overlord.profile,
-        context.overlord.skills,
-        context.overlord.promote,
-        context.overlord.bond,
-        context.overlord.train,
-      ].filter(Boolean).length
-    }/5`
-  );
-
-  return pieces.join(" • ");
 }
