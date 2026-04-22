@@ -863,7 +863,7 @@ export default function Page() {
       }
 
             const heroes: HeroRosterListItem[] =
-        json?.heroes && Array.isArray(json.heroes) ? json.heroes : [];
+        setHeroesRoster(Array.isArray(json?.heroes) ? json?.heroes : []);
 
       setHeroesRoster(heroes);
     } catch (e: any) {
