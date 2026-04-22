@@ -7,53 +7,161 @@ import {
 } from "@/app/api/battle/_lib/context";
 import { analyzeParsedReport } from "@/app/api/battle/_lib/analyzer";
 
+type BattleRow = {
+  id: number | string;
+  profile_id?: string | null;
+  created_at?: string | null;
+  parsed?: any;
+};
+
+type AnalyzeResponse = {
+  ok: boolean;
+  fetched?: number;
+  battleCount?: number;
+  summary: string;
+  context_summary: string;
+  context?: any;
+  analyses?: Array<{
+    id: number | string;
+    created_at: string | null;
+    analysis: any;
+  }>;
+  answer?: string;
+  mode?: string;
+  error?: string;
+};
+
+function parseLimit(value: string | null, fallback = 200, max = 500) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+function lines(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v ?? ""));
+  if (typeof value === "string") return value.split("\n");
+  if (value == null) return [];
+  return [String(value)];
+}
+
+async function loadBattleRows(limit: number): Promise<BattleRow[]> {
+  const sb: any = supabaseAdmin();
+
+  const { data, error } = await sb
+    .from("battle_reports")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message || "Failed to load battle reports");
+  }
+
+  return Array.isArray(data) ? (data as BattleRow[]) : [];
+}
+
+function buildAnalyses(rows: BattleRow[]) {
+  return rows.map((r) => ({
+    id: r.id,
+    created_at: r.created_at ?? null,
+    analysis: analyzeParsedReport(r.parsed ?? {}),
+  }));
+}
+
+function buildSummary(
+  rows: BattleRow[],
+  contextSummary: string
+): string {
+  const output: string[] = [];
+
+  output.push("Battle report analyzer");
+  output.push(`Reports loaded: ${rows.length}`);
+
+  if (rows.length > 0) {
+    output.push(
+      `Newest report: #${rows[0].id} • ${rows[0].created_at ?? "unknown"}`
+    );
+  } else {
+    output.push("No reports found.");
+  }
+
+  output.push("");
+  output.push("Saved player data loaded first.");
+  output.push(contextSummary || "No context summary available.");
+
+  return output.join("\n");
+}
+
+function buildAnswer(
+  question: string,
+  analyses: ReturnType<typeof buildAnalyses>,
+  contextSummary: string
+): string {
+  const out: string[] = [];
+
+  out.push(`Question: ${question}`);
+  out.push("");
+
+  if (!analyses.length) {
+    out.push("No battle reports available.");
+  } else {
+    out.push(`Reports reviewed: ${analyses.length}`);
+    out.push("");
+
+    analyses.slice(0, 15).forEach((entry, index) => {
+      out.push(
+        `Report ${index + 1} • ID ${entry.id} • ${
+          entry.created_at ?? "unknown"
+        }`
+      );
+
+      const summaryLines = lines(entry.analysis?.summary);
+      if (summaryLines.length) {
+        out.push(...summaryLines);
+      } else {
+        out.push("No report summary available.");
+      }
+
+      out.push("");
+    });
+  }
+
+  out.push("Saved Player Context:");
+  out.push(contextSummary || "No context summary available.");
+
+  return out.join("\n");
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const limitRaw = Number(url.searchParams.get("limit") ?? "50");
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50;
+    const limit = parseLimit(url.searchParams.get("limit"));
 
-    const sb: any = supabaseAdmin();
-
-    const { data: rows, error } = await sb
-      .from("battle_reports")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error: error.message || "Failed to load battle reports" },
-        { status: 500 }
-      );
-    }
+    const rows = await loadBattleRows(limit);
+    const analyses = buildAnalyses(rows);
 
     const context = await buildBattleContextFromRequest(req);
     const contextSummary = summarizeBattleContext(context);
 
-    const analyses = Array.isArray(rows)
-      ? rows.map((r: any) => ({
-          id: r.id,
-          created_at: r.created_at ?? null,
-          analysis: analyzeParsedReport({
-            parsedReport: r.parsed ?? {},
-            context,
-          }),
-        }))
-      : [];
-
-    return NextResponse.json({
+    const response: AnalyzeResponse = {
       ok: true,
-      fetched: Array.isArray(rows) ? rows.length : 0,
-      battleCount: Array.isArray(rows) ? rows.length : 0,
-      context,
+      fetched: rows.length,
+      battleCount: rows.length,
+      summary: buildSummary(rows, contextSummary),
       context_summary: contextSummary,
-      summary: `Loaded ${Array.isArray(rows) ? rows.length : 0} battle report(s).`,
+      context,
       analyses,
-    });
+    };
+
+    return NextResponse.json(response);
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message ?? "Failed to load battle analyzer" },
+      {
+        ok: false,
+        summary: "",
+        context_summary: "",
+        error: e?.message ?? "Failed to load battle analyzer",
+      },
       { status: 500 }
     );
   }
@@ -62,71 +170,41 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+
     const message =
       typeof body?.message === "string" && body.message.trim()
         ? body.message.trim()
-        : "Analyze my battle performance using saved player data first, then fill gaps with estimation.";
+        : "Analyze my battle reports using saved player data first, then fill gaps with estimation.";
 
-    const limitRaw = Number(body?.limit ?? 50);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50;
+    const limit = parseLimit(
+      body?.limit != null ? String(body.limit) : null
+    );
 
-    const sb: any = supabaseAdmin();
-
-    const { data: rows, error } = await sb
-      .from("battle_reports")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error: error.message || "Failed to load battle reports" },
-        { status: 500 }
-      );
-    }
+    const rows = await loadBattleRows(limit);
+    const analyses = buildAnalyses(rows);
 
     const context = await buildBattleContextFromRequest(req);
     const contextSummary = summarizeBattleContext(context);
 
-    const analyses = Array.isArray(rows)
-      ? rows.map((r: any) =>
-          analyzeParsedReport({
-            parsedReport: r.parsed ?? {},
-            context,
-          })
-        )
-      : [];
-
-    const summaryLines: string[] = [];
-    summaryLines.push(`Question: ${message}`);
-    summaryLines.push("");
-    summaryLines.push(`Reports considered: ${Array.isArray(rows) ? rows.length : 0}`);
-    summaryLines.push(`Context: ${contextSummary}`);
-    summaryLines.push("");
-
-    if (analyses.length) {
-      summaryLines.push("Per-report summaries:");
-      analyses.forEach((entry: any, idx: number) => {
-        const text = Array.isArray(entry?.summary)
-          ? entry.summary.join(" | ")
-          : String(entry?.summary ?? "No summary available.");
-        summaryLines.push(`${idx + 1}. ${text}`);
-      });
-    } else {
-      summaryLines.push("No parsed battle reports available.");
-    }
-
-    return NextResponse.json({
+    const response: AnalyzeResponse = {
       ok: true,
       mode: "aggregate",
-      context,
+      summary: buildSummary(rows, contextSummary),
       context_summary: contextSummary,
-      summary: summaryLines.join("\n"),
-      answer: summaryLines.join("\n"),
-    });
+      context,
+      analyses,
+      answer: buildAnswer(message, analyses, contextSummary),
+    };
+
+    return NextResponse.json(response);
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message ?? "Battle analyzer failed" },
+      {
+        ok: false,
+        summary: "",
+        context_summary: "",
+        error: e?.message ?? "Battle analyzer failed",
+      },
       { status: 500 }
     );
   }
