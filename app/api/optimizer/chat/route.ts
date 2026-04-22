@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -14,46 +15,80 @@ function getCookieFromHeader(cookieHeader: string | null, name: string): string 
   return undefined;
 }
 
-async function requireSessionFromReq(req: Request): Promise<boolean> {
+async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
   const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
-  if (!token) return false;
+  if (!token) return null;
   try {
-    await verifySession(token);
-    return true;
+    const s: any = await verifySession(token);
+    return { profileId: String(s.profileId) };
   } catch {
-    return false;
+    return null;
   }
 }
 
 export async function POST(req: Request) {
-  const okSession = await requireSessionFromReq(req);
-  if (!okSession) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const s = await requireSessionFromReq(req);
+  if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
     | {
         question?: string;
         optimizer_result?: any;
+        saved_optimizer_id?: unknown;
       }
     | null;
 
   const question = String(body?.question ?? "").trim();
-  const optimizerResult = body?.optimizer_result;
-
   if (!question) {
     return NextResponse.json({ ok: false, error: "Missing question" }, { status: 400 });
   }
+
+  let optimizerResult = body?.optimizer_result ?? null;
+
+  if (!optimizerResult && body?.saved_optimizer_id != null) {
+    const savedId = Number(body.saved_optimizer_id);
+    if (Number.isFinite(savedId)) {
+      const sb: any = supabaseAdmin();
+      const row = await sb
+        .from("optimizer_saved_runs")
+        .select("id, profile_id, label, mode, squad_count, locked_heroes, result, note, created_at, updated_at")
+        .eq("id", savedId)
+        .eq("profile_id", s.profileId)
+        .maybeSingle();
+
+      if (row.error) {
+        return NextResponse.json({ ok: false, error: row.error.message }, { status: 500 });
+      }
+      if (!row.data) {
+        return NextResponse.json({ ok: false, error: "Saved optimizer file not found" }, { status: 404 });
+      }
+
+      optimizerResult = {
+        ...row.data.result,
+        _saved_file_meta: {
+          id: row.data.id,
+          label: row.data.label,
+          mode: row.data.mode,
+          squad_count: row.data.squad_count,
+          locked_heroes: row.data.locked_heroes,
+          note: row.data.note,
+          created_at: row.data.created_at,
+        },
+      };
+    }
+  }
+
   if (!optimizerResult) {
-    return NextResponse.json({ ok: false, error: "Missing optimizer_result" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing optimizer_result or saved_optimizer_id" }, { status: 400 });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    const fallback = [
-      "Optimizer explanation is unavailable because OPENAI_API_KEY is missing.",
-      "Saved result context was received, but live conversational explanation needs the model.",
-    ].join(" ");
-
-    return NextResponse.json({ ok: true, answer: fallback });
+    return NextResponse.json({
+      ok: true,
+      answer:
+        "Optimizer explanation is unavailable because OPENAI_API_KEY is missing. The saved optimizer context was found, but live explanation requires the model.",
+    });
   }
 
   try {
@@ -64,7 +99,8 @@ export async function POST(req: Request) {
       "Use only the provided optimizer result context.",
       "Explain clearly and simply first.",
       "Be direct about why heroes were chosen, why they were placed where they were, and why gear was assigned as it was.",
-      "If the question asks for tradeoffs, explain what changed under the optimizer mode.",
+      "If the question asks about tradeoffs, explain what changed under the optimizer mode.",
+      "If the result came from a saved optimizer file, you may mention that file label if helpful.",
       "",
       "OPTIMIZER RESULT JSON:",
       JSON.stringify(optimizerResult, null, 2),
