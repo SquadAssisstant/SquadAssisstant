@@ -853,7 +853,7 @@ export default function Page() {
     setLoadingHeroesRoster(true);
     setHeroesRosterErr(null);
 
-    try {
+        try {
       const res = await fetch("/api/heroes", { credentials: "include" });
       const json = await safeJson<{ ok?: boolean; heroes?: HeroRosterListItem[]; error?: string }>(res);
 
@@ -862,8 +862,8 @@ export default function Page() {
         return;
       }
 
-            const heroes: HeroRosterListItem[] =
-        setHeroesRoster(Array.isArray(json?.heroes) ? json?.heroes : []);
+      const heroes: HeroRosterListItem[] =
+        json && Array.isArray(json.heroes) ? json.heroes : [];
 
       setHeroesRoster(heroes);
     } catch (e: any) {
