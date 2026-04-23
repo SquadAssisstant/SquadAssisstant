@@ -1537,7 +1537,15 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
+            <div className="flex flex-col items-stretch gap-3 md:items-end">
+  <button
+    onClick={() => void handleLogout()}
+    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 md:self-end"
+  >
+    Logout
+  </button>
+
+  <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
               <AppCard title="Upload" subtitle="Add and review screenshots" onClick={() => setUploadOpen(true)} />
               <AppCard title="Heroes" subtitle="Full owned roster" onClick={() => setHeroesOpen(true)} />
               <AppCard title="Squads" subtitle="Assign heroes and open profiles" onClick={() => setSquadsOpen(true)} />
