@@ -1545,8 +1545,10 @@ export default function Page() {
               <AppCard title="Overlord" subtitle="Profile, skills, bond, train" onClick={() => setOverlordOpen(true)} />
               <AppCard title="Battle Reports" subtitle="Analyze report data" onClick={() => setBattleOpen(true)} />
               <AppCard title="Optimizer" subtitle="Best squad spread builder" onClick={() => setOptimizerOpen(true)} />
-            </div>
-          </div>
+         </div>
+      </div>
+    </div>
+  </div>
 
       <HeroesModal
         open={heroesOpen}
