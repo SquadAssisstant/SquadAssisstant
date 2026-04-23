@@ -16,6 +16,7 @@ import { OverlordBondEditor } from "@/components/overlord/OverlordBondEditor";
 import { OverlordTrainEditor } from "@/components/overlord/OverlordTrainEditor";
 
 import { HeroesModal } from "@/components/heroes/HeroesModal";
+import { MainChat } from "@/components/chat/MainChat";
 import { OptimizerSavedRunsPanel } from "@/components/optimizer/OptimizerSavedRunsPanel";
 
 type UploadItem = {
