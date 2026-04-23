@@ -1548,67 +1548,6 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-            <SectionCard title="Current Squad Snapshot" subtitle="Four squads, five hero slots each">
-              {loadingPlayerState ? (
-                <div className="text-sm text-white/55">Loading squads…</div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {squadCards.map((group) => {
-                    const assigned = group.slots.filter((s) => s.upload).length;
-                    const firstHero = group.slots.find((s) => s.upload)?.upload ?? null;
-
-                    return (
-                      <button
-                        key={group.squad}
-                        onClick={() => setSquadsOpen(true)}
-                        className="rounded-3xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10"
-                      >
-                        <div className="text-xs uppercase tracking-[0.25em] text-white/40">Squad {group.squad}</div>
-                        <div className="mt-3 h-32 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                          {firstHero?.url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={firstHero.url} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-sm text-white/35">No hero</div>
-                          )}
-                        </div>
-                        <div className="mt-3 text-sm text-white/75">{assigned} / 5 hero slots assigned</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </SectionCard>
-
-            <SectionCard title="Library Snapshot" subtitle="Quick count of currently loaded screenshot groups">
-              <div className="grid gap-3 sm:grid-cols-5">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Heroes</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{heroesRoster.length || heroUploads.length}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Drone</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{droneUploads.length}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Overlord</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{overlordUploads.length}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Battle Files</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{battleGroups.length}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Optimizer Files</div>
-                  <div className="mt-2 text-3xl font-semibold text-white">{optimizerSavedFiles.length}</div>
-                </div>
-              </div>
-            </SectionCard>
-          </div>
-        </div>
-      </div>
-
       <HeroesModal
         open={heroesOpen}
         onClose={() => setHeroesOpen(false)}
