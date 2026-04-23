@@ -1525,6 +1525,16 @@ export default function Page() {
     }
   }, [loadOptimizerSavedDetail, selectedOptimizerSavedId]);
 
+  const handleLogout = useCallback(async () => {
+  try {
+    await fetch("/api/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {}
+
+  window.location.href = "/login";
+}, []);
   return (
     <main className="min-h-screen bg-[#060b14] text-white">
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
