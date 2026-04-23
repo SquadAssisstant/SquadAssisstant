@@ -1566,7 +1566,7 @@ export default function Page() {
         </div>
       </div>
     </div>
-
+</div>
       <HeroesModal
         open={heroesOpen}
         onClose={() => setHeroesOpen(false)}
