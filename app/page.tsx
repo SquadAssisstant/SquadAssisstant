@@ -1546,27 +1546,26 @@ export default function Page() {
                 Home launcher for uploads, heroes, squads, hero profile submodal, drone, overlord, battle report analyzer, and optimizer.
               </div>
             </div>
+        <div className="flex flex-col items-stretch gap-3 md:items-end">
+          <button
+            onClick={() => void handleLogout()}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+          >
+            Logout
+          </button>
 
-            <div className="flex flex-col items-stretch gap-3 md:items-end">
-  <button
-    onClick={() => void handleLogout()}
-    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 md:self-end"
-  >
-    Logout
-  </button>
-
-  <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
-              <AppCard title="Upload" subtitle="Add and review screenshots" onClick={() => setUploadOpen(true)} />
-              <AppCard title="Heroes" subtitle="Full owned roster" onClick={() => setHeroesOpen(true)} />
-              <AppCard title="Squads" subtitle="Assign heroes and open profiles" onClick={() => setSquadsOpen(true)} />
-              <AppCard title="Drone" subtitle="Overview, components, boost, chips" onClick={() => setDroneOpen(true)} />
-              <AppCard title="Overlord" subtitle="Profile, skills, bond, train" onClick={() => setOverlordOpen(true)} />
-              <AppCard title="Battle Reports" subtitle="Analyze report data" onClick={() => setBattleOpen(true)} />
-              <AppCard title="Optimizer" subtitle="Best squad spread builder" onClick={() => setOptimizerOpen(true)} />
-         </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
+            <AppCard title="Upload" subtitle="Add and review screenshots" onClick={() => setUploadOpen(true)} />
+            <AppCard title="Heroes" subtitle="Full owned roster" onClick={() => setHeroesOpen(true)} />
+            <AppCard title="Squads" subtitle="Assign heroes and open profiles" onClick={() => setSquadsOpen(true)} />
+            <AppCard title="Drone" subtitle="Overview, components, boost, chips" onClick={() => setDroneOpen(true)} />
+            <AppCard title="Overlord" subtitle="Profile, skills, bond, train" onClick={() => setOverlordOpen(true)} />
+            <AppCard title="Battle Reports" subtitle="Analyze report data" onClick={() => setBattleOpen(true)} />
+            <AppCard title="Optimizer" subtitle="Best squad spread builder" onClick={() => setOptimizerOpen(true)} />
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
       <HeroesModal
         open={heroesOpen}
