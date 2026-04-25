@@ -2057,7 +2057,7 @@ className={`overflow-hidden rounded-xl border ${
                   <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
                     {selectedDroneUpload?.url ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={selectedDroneUpload.url} alt="" className="h-[340px] w-full object-cover" />
+                      <img src={selectedDroneUpload.url} alt="" className="max-h-[70vh] w-full object-contain bg-black/30" />
                     ) : (
                       <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No drone image selected</div>
                     )}
@@ -2135,7 +2135,7 @@ className={`overflow-hidden rounded-xl border ${
                   <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
                     {selectedOverlordUpload?.url ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={selectedOverlordUpload.url} alt="" className="h-[340px] w-full object-cover" />
+                      <img src={selectedOverlordUpload.url} alt="" className="max-h-[70vh] w-full object-contain bg-black/30" />
                     ) : (
                       <div className="flex h-[340px] items-center justify-center text-sm text-white/35">No overlord image selected</div>
                     )}
