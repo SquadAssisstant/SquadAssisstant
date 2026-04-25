@@ -751,7 +751,9 @@ export default function Page() {
     try {
       const items = await loadUploadsByKinds(HERO_KINDS);
       setHeroUploads(items);
-      if (!selectedHeroUploadId && items[0]) setSelectedHeroUploadId(items[0].id);
+      if (!heroSubModalOpen && !selectedHeroUploadId && items[0]) {
+  setSelectedHeroUploadId(items[0].id);
+      }
     } finally {
       setLoadingHeroUploads(false);
     }
