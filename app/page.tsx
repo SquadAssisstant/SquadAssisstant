@@ -1786,27 +1786,46 @@ export default function Page() {
                       <div className="mt-3 h-28 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                         {upload?.url ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={upload.url} alt="" className="h-full w-full object-cover" />
+                          <img src={upload.url} alt="" className="h-full w-full object-contain" />
                         ) : (
                           <div className="flex h-full items-center justify-center text-xs text-white/35">No hero</div>
                         )}
                       </div>
 
-                      <select
-                        value={upload?.id ?? ""}
-                        onChange={(e) => {
-                          const next = e.target.value ? Number(e.target.value) : null;
-                          void updateSquadHeroSlot(group.squad, slot, next);
-                        }}
-                        className="mt-3 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
-                      >
-                        <option value="">— Select hero upload —</option>
-                        {heroUploads.map((hero) => (
-                          <option key={hero.id} value={hero.id}>
-                            Hero #{hero.id}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="mt-3 grid max-h-48 grid-cols-3 gap-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-2">
+  {heroUploads.map((hero) => (
+    <button
+      key={hero.id}
+      type="button"
+      onClick={() =>
+        void updateSquadHeroSlot(group.squad, slot, hero.id)
+      }
+      className={`overflow-hidden rounded-xl border ${
+        upload?.id === hero.id
+          ? "border-emerald-400 bg-emerald-500/15"
+          : "border-white/10 bg-white/5"
+      }`}
+    >
+      <div className="h-20 overflow-hidden bg-black/30">
+        {hero.url ? (
+          <img
+            src={hero.url}
+            alt=""
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-xs text-white/40">
+            No image
+          </div>
+        )}
+      </div>
+
+      <div className="truncate px-2 py-1 text-xs text-white/80">
+        Hero #{hero.id}
+      </div>
+    </button>
+  ))}
+</div>
 
                       <button
                         onClick={() => {
