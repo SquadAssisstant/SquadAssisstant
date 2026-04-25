@@ -482,12 +482,7 @@ function ModalShell({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 md:items-center md:p-6">
-      <div
-        className={cx(
-          "max-h-[92vh] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220] shadow-2xl",
-          wide ? "max-w-7xl" : "max-w-5xl"
-        )}
-      >
+      <div className="flex h-[100dvh] w-full flex-col overflow-hidden border border-white/10 bg-[#0b1220] shadow-2xl md:h-[96vh] md:max-w-[96vw] md:rounded-[28px]">
         <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-6">
           <div>
             <div className="text-xl font-semibold text-white">{title}</div>
