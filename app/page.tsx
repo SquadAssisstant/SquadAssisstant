@@ -1799,8 +1799,8 @@ export default function Page() {
       type="button"
       onClick={() =>
   void updateSquadHeroSlot(group.squad, slot.slot, hero.id)
-      }
-      }
+}
+className={...}
       className={`overflow-hidden rounded-xl border ${
         upload?.id === hero.id
           ? "border-emerald-400 bg-emerald-500/15"
