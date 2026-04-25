@@ -1798,7 +1798,7 @@ export default function Page() {
       key={hero.id}
       type="button"
       onClick={() =>
-  void updateSquadHeroSlot(group.squad, slot.slot, hero.id)
+  void updateSquadHeroSlot(group.squad, slot, hero.id)
 }
 className={...}
       className={`overflow-hidden rounded-xl border ${
