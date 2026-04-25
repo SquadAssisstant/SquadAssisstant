@@ -387,15 +387,21 @@ function normalizeSquadAssignments(state: PlayerState | null | undefined): Recor
   return base;
 }
 
-function squadAssignmentsToState(assignments: Record<number, Record<number, number | null>>): PlayerState {
-  return {
-    squads: {
-      "1": { slots: { "1": assignments[1][1], "2": assignments[1][2], "3": assignments[1][3], "4": assignments[1][4], "5": assignments[1][5] } },
-      "2": { slots: { "1": assignments[2][1], "2": assignments[2][2], "3": assignments[2][3], "4": assignments[2][4], "5": assignments[2][5] } },
-      "3": { slots: { "1": assignments[3][1], "2": assignments[3][2], "3": assignments[3][3], "4": assignments[3][4], "5": assignments[3][5] } },
-      "4": { slots: { "1": assignments[4][1], "2": assignments[4][2], "3": assignments[4][3], "4": assignments[4][4], "5": assignments[4][5] } },
-    },
-  };
+function squadAssignmentsToState(
+  assignments: Record<number, Record<number, number | null>>
+): PlayerState {
+  const squads: PlayerState["squads"] = {};
+
+  for (const squad of [1, 2, 3, 4]) {
+    squads[String(squad)] = { slots: {} };
+
+    for (const slot of [1, 2, 3, 4, 5]) {
+      squads[String(squad)].slots[String(slot)] =
+        assignments[squad]?.[slot] ?? null;
+    }
+  }
+
+  return { squads };
 }
 
 function getBattleRangeStart(range: BattleRange): Date | null {
