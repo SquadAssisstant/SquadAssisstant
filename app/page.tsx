@@ -757,7 +757,7 @@ export default function Page() {
     } finally {
       setLoadingHeroUploads(false);
     }
-  }, [loadUploadsByKinds, selectedHeroUploadId]);
+  }, [heroSubModalOpen, loadUploadsByKinds, selectedHeroUploadId]);
 
   const loadDroneUploads = useCallback(async () => {
     setLoadingDroneUploads(true);
