@@ -1509,12 +1509,14 @@ export default function Page() {
     }
   }, [optimizerOpen, loadHeroesRoster, loadOptimizerSavedFiles]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (selectedBattleGroupId) {
       void loadBattleGroupDetail(selectedBattleGroupId);
+      setSelectedBattleReportId("");
     } else {
       setSelectedBattleGroup(null);
       setSelectedBattleGroupItems([]);
+      setSelectedBattleReportId("");
     }
   }, [loadBattleGroupDetail, selectedBattleGroupId]);
 
