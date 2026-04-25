@@ -495,7 +495,7 @@ function ModalShell({
             Close
           </button>
         </div>
-        <div className="max-h-[calc(92vh-78px)] overflow-y-auto p-5 md:p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-5 md:p-6">{children}</div>
       </div>
     </div>
   );
