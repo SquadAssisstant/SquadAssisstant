@@ -1872,7 +1872,7 @@ export default function Page() {
                 <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
                   {heroProfileImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={heroProfileImageUrl} alt="" className="h-[420px] w-full object-cover" />
+                    <img src={heroProfileImageUrl} alt="" className="max-h-[70vh] w-full object-contain bg-black/30" />
                   ) : (
                     <div className="flex h-[420px] items-center justify-center text-sm text-white/35">No hero image loaded</div>
                   )}
