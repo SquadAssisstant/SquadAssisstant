@@ -166,6 +166,27 @@ export async function POST(req: Request) {
     .single();
 
   if (fx.error) return NextResponse.json({ ok: false, error: fx.error.message }, { status: 500 });
+  const obs = await sb.from("game_observations").upsert(
+  {
+    observation_type: domain,
+    entity_type: domain.startsWith("hero") ? "hero" : domain,
+    entity_key: key.replace(`${s.profileId}:`, ""),
+    observed_value: mergedValue,
+    source_kind: "player_fact",
+    confidence: 1.0,
+    attributes: {
+      domain,
+      source_upload_id: uploadId,
+      fact_id: fx.data.id,
+    },
+    updated_at: new Date().toISOString(),
+  },
+  { onConflict: "observation_type,entity_type,entity_key" }
+);
+
+if (obs.error) {
+  return NextResponse.json({ ok: false, error: `game_observations mirror failed: ${obs.error.message}` }, { status: 500 });
+}
 
   // IMPORTANT:
   // Do NOT update player_uploads.facts_id here, because your DB column is BIGINT
