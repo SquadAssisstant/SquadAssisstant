@@ -481,24 +481,28 @@ function ModalShell({
   if (!open) return null;
 
   return (
-  <div className="fixed inset-0 z-50 flex items-stretch justify-stretch bg-black/70 p-0">
-    <div className="flex h-[100dvh] w-screen flex-col overflow-hidden border border-white/10 bg-[#0b1220] shadow-2xl">
-      <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-          <div>
-            <div className="text-xl font-semibold text-white">{title}</div>
-            {subtitle ? <div className="mt-1 text-sm text-white/55">{subtitle}</div> : null}
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/75 hover:bg-white/10"
-          >
-            Close
-          </button>
+  <div className="fixed inset-0 z-[9999] h-[100dvh] w-[100dvw] bg-black/70">
+    <div className="flex h-[100dvh] w-[100dvw] max-w-none flex-col overflow-hidden rounded-none border-0 bg-[#0b1220] shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-4">
+        <div>
+          <div className="text-xl font-semibold text-white">{title}</div>
+          {subtitle ? <div className="mt-1 text-xs text-white/70">{subtitle}</div> : null}
         </div>
-        <div className="flex-1 overflow-y-auto p-5 md:p-6">{children}</div>
+
+        <button
+          onClick={onClose}
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 md:p-6">
+        {children}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 function SectionCard({
