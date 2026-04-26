@@ -85,6 +85,18 @@ export async function buildBattleCombatContext(profileId: string) {
     throw new Error(factsRes.error.message);
   }
 
+  const observationsRes = await sb
+    .from("game_observations")
+    .select("observation_type, entity_type, entity_key, attributes, observed_value, confidence, updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(1000);
+
+  if (observationsRes.error) {
+    throw new Error(observationsRes.error.message);
+  }
+
+  const sharedGameData = Array.isArray(observationsRes.data) ? observationsRes.data : [];
+
   const heroMap = new Map<string, any>();
   const drone: any = {};
   const overlord: any = {};
@@ -209,8 +221,10 @@ export async function buildBattleCombatContext(profileId: string) {
     heroes: Array.from(heroMap.values()),
     drone,
     overlord,
+    shared_game_data: sharedGameData,
     shared_notes: [
-      "Battle analyzer uses saved player data plus combat math formulas.",
+      `Shared anonymous game observations loaded: ${sharedGameData.length}`,
+      "Battle analyzer uses saved player data, anonymous shared game observations, and combat math formulas before AI estimation.",
       "Combat explanation should reference total stats, damage multipliers, morale, type advantages, lineup bonuses, and effective power.",
     ],
   };
@@ -218,13 +232,28 @@ export async function buildBattleCombatContext(profileId: string) {
 
 export function summarizeBattleContext(context: any): string {
   const heroes = Array.isArray(context?.heroes) ? context.heroes : [];
-  const droneReady = !!(context?.drone?.profile || context?.drone?.components || context?.drone?.combat_boost || context?.drone?.boost_chips);
-  const overlordReady = !!(context?.overlord?.profile || context?.overlord?.skills || context?.overlord?.promote || context?.overlord?.bond || context?.overlord?.train);
+  const sharedGameData = Array.isArray(context?.shared_game_data) ? context.shared_game_data : [];
+
+  const droneReady = !!(
+    context?.drone?.profile ||
+    context?.drone?.components ||
+    context?.drone?.combat_boost ||
+    context?.drone?.boost_chips
+  );
+
+  const overlordReady = !!(
+    context?.overlord?.profile ||
+    context?.overlord?.skills ||
+    context?.overlord?.promote ||
+    context?.overlord?.bond ||
+    context?.overlord?.train
+  );
 
   const lines: string[] = [];
   lines.push(`Saved heroes loaded: ${heroes.length}`);
   lines.push(`Drone data ready: ${droneReady ? "yes" : "no"}`);
   lines.push(`Overlord data ready: ${overlordReady ? "yes" : "no"}`);
+  lines.push(`Shared anonymous game observations: ${sharedGameData.length}`);
 
   if (heroes.length) {
     const sorted = [...heroes].sort((a, b) => Number(b?.base_stats?.power || 0) - Number(a?.base_stats?.power || 0));
