@@ -983,21 +983,41 @@ export default function Page() {
   }, []);
 
   const updateSquadHeroSlot = useCallback(
-    async (squadNumber: number, heroSlotNumber: number, heroUploadId: number | null) => {
-      const nextAssignments = {
-        ...squadAssignments,
-        [squadNumber]: {
-          ...squadAssignments[squadNumber],
-          [heroSlotNumber]: heroUploadId,
-        },
-      };
+  async (squadNumber: number, heroSlotNumber: number, heroUploadId: number | null) => {
+    setSavingPlayerState(true);
+    setPlayerStateErr(null);
+    setPlayerStateMsg(null);
 
-      const nextState = squadAssignmentsToState(nextAssignments);
-      setPlayerState(nextState);
-      await savePlayerState(nextState);
-    },
-    [savePlayerState, squadAssignments]
-  );
+    try {
+      const res = await fetch("/api/player/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          op: "set_slot",
+          squad: squadNumber,
+          slot: heroSlotNumber,
+          upload_id: heroUploadId,
+        }),
+      });
+
+      const json = await safeJson<PlayerStateResponse>(res);
+
+      if (!res.ok || !json?.ok) {
+        setPlayerStateErr(json?.error ?? `Failed to save squads (${res.status})`);
+        return;
+      }
+
+      setPlayerState(json.state ?? { squads: {} });
+      setPlayerStateMsg("Squads saved ✅");
+    } catch (e: any) {
+      setPlayerStateErr(e?.message ?? "Failed to save squads");
+    } finally {
+      setSavingPlayerState(false);
+    }
+  },
+  []
+);
 
   const loadHeroProfile = useCallback(async (uploadId: number | null) => {
     if (!uploadId) {
