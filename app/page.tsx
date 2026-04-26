@@ -481,9 +481,9 @@ function ModalShell({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-stretch bg-black/70 p-0"
-      <div className="flex h-[100dvh] w-screen flex-col overflow-hidden border border-white/10 bg-[#0b1220] shadow-2xl"
-        <div className="flex-1 overflow-y-auto p-5 md:p-6"
+  <div className="fixed inset-0 z-50 flex items-stretch justify-stretch bg-black/70 p-0">
+    <div className="flex h-[100dvh] w-screen flex-col overflow-hidden border border-white/10 bg-[#0b1220] shadow-2xl">
+      <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <div className="text-xl font-semibold text-white">{title}</div>
             {subtitle ? <div className="mt-1 text-sm text-white/55">{subtitle}</div> : null}
