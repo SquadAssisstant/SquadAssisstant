@@ -186,6 +186,20 @@ export async function POST(req: Request) {
     .single();
 
   if (fx.error) return NextResponse.json({ ok: false, error: fx.error.message }, { status: 500 });
+  const obs = await saveAnonymousGameObservation(sb, {
+  observation_type: domain,
+  entity_type: domain.startsWith("hero_")
+    ? "hero"
+    : domain.startsWith("drone_")
+      ? "drone"
+      : "overlord",
+  entity_key: domain,
+  value: nextSnapshot,
+});
+
+if (obs.error) {
+  return NextResponse.json({ ok: false, error: obs.error.message }, { status: 500 });
+}
 
   return NextResponse.json({ ok: true, fact_id: fx.data.id });
 }
