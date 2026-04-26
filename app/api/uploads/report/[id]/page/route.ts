@@ -56,10 +56,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const storageBucket = "uploads";
   const storagePath = `profiles/${s.profileId}/reports/${reportId}/${pageIndex}_${uuid}_${baseName}.${ext}`;
 
-  // ✅ critical: cast to any so .from() doesn't type-collapse to never
   const sb = supabaseAdmin() as any;
 
-  // Upload to storage
   const up = await sb.storage.from(storageBucket).upload(storagePath, buf, {
     contentType: file.type,
     upsert: false,
@@ -69,8 +67,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: up.error.message }, { status: 500 });
   }
 
-  // Insert page record (dedupe via unique index on report_id+sha256 if you added it)
-  const ins = await sb
+  const pageIns = await sb
     .from("battle_report_pages")
     .insert({
       report_id: reportId,
@@ -85,31 +82,39 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .select("id")
     .single();
 
-  // If duplicate (unique constraint), return success but indicate deduped
-  if (ins.error) {
-    const msg = String(ins.error.message || "");
-    const code = String(ins.error.code || "");
-    const looksDuplicate =
-      code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
+  if (pageIns.error) {
+    return NextResponse.json({ error: pageIns.error.message }, { status: 500 });
+  }
 
-    if (looksDuplicate) {
-      return NextResponse.json({
-        ok: true,
-        reportId,
-        pageIndex,
-        sha256,
-        storagePath,
-        deduped: true,
-      });
-    }
+  const uploadIns = await sb
+    .from("player_uploads")
+    .insert({
+      profile_id: s.profileId,
+      kind: "battle_report",
+      storage_bucket: storageBucket,
+      storage_path: storagePath,
+      original_name: file.name || `battle_report_page_${pageIndex}.${ext}`,
+      mime_type: file.type,
+      bytes,
+      sha256,
+      meta: {
+        report_id: reportId,
+        battle_report_page_id: pageIns.data.id,
+        page_index: pageIndex,
+      },
+    })
+    .select("id")
+    .single();
 
-    return NextResponse.json({ error: ins.error.message }, { status: 500 });
+  if (uploadIns.error) {
+    return NextResponse.json({ error: uploadIns.error.message }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
     reportId,
-    pageId: ins.data.id,
+    pageId: pageIns.data.id,
+    uploadId: uploadIns.data.id,
     pageIndex,
     sha256,
     storagePath,
