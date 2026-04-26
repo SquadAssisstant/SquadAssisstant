@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
+import { saveAnonymousGameObservation } from "@/lib/gameObservations";
 
 export const runtime = "nodejs";
 
