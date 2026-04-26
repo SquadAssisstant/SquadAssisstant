@@ -960,7 +960,7 @@ export default function Page() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(nextState),
+        body: JSON.stringify({ state: nextState }),
       });
 
       const json = await safeJson<PlayerStateResponse>(res);
