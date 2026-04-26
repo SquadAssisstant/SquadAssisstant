@@ -397,7 +397,7 @@ function squadAssignmentsToState(
 
     for (const slot of [1, 2, 3, 4, 5]) {
       squads[String(squad)].slots[String(slot)] =
-        assignments[squad]?.[slot] ?? null;
+        assignments[squad]?.[slot] ?? undefined;
     }
   }
 
