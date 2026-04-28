@@ -168,7 +168,7 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({
+    return NextResponse.json({
     ok: true,
     reportId,
     pageId: pageIns.data.id,
@@ -179,3 +179,4 @@ export async function POST(
     bytes,
     mime: file.type,
   });
+}
