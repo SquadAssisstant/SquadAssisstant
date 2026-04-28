@@ -17,7 +17,6 @@ function getCookie(cookieHeader: string | null, name: string) {
 
 async function requireSession(req: Request) {
   const token = getCookie(req.headers.get("cookie"), sessionCookieName());
-
   if (!token) return null;
 
   try {
@@ -168,7 +167,7 @@ export async function POST(
     }
   }
 
-    return NextResponse.json({
+  return NextResponse.json({
     ok: true,
     reportId,
     pageId: pageIns.data.id,
