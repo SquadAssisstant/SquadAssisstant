@@ -133,6 +133,22 @@ type BattleGroupDetailResponse = {
   items?: BattleGroupItem[];
   error?: string;
 };
+type BattleReportPage = {
+  id: string;
+  storage_path: string;
+  page_index: number;
+};
+
+type BattleReport = {
+  id: string;
+  created_at: string;
+  battle_report_pages: BattleReportPage[];
+};
+
+type BattleReportListResponse = {
+  reports: BattleReport[];
+  error?: string;
+};
 
 type HeroRosterListItem = {
   hero_key: string;
