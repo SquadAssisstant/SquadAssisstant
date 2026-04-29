@@ -210,7 +210,7 @@ export async function POST(req: Request) {
     battleReportPageId = pageInsert.data.id;
   }
   
-    return NextResponse.json({
+      return NextResponse.json({
     ok: true,
     id: ins.data.id,
     kind: ins.data.kind,
@@ -219,3 +219,4 @@ export async function POST(req: Request) {
     report_id: battleReportId,
     page_id: battleReportPageId,
   });
+}
