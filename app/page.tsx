@@ -1512,8 +1512,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
   useEffect(() => {
     if (battleOpen) {
       void loadBattleAnalyzerData();
-      void loadBattleGroups();
-    }
+      void loadBattleReports();
   }, [battleOpen, loadBattleAnalyzerData, loadBattleGroups]);
 
   useEffect(() => {
