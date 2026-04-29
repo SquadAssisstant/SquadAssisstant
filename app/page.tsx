@@ -1462,9 +1462,9 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
         await loadOverlordUploads();
       }
       if (apiKind === "battle_report") {
-        await loadBattleUploads();
-        await loadBattleGroups();
-        await loadBattleAnalyzerData();
+  await loadBattleUploads();
+  await loadBattleReports();
+  await loadBattleAnalyzerData();
       }
     } catch (e: any) {
       setUploadErr(e?.message ?? "Upload failed");
