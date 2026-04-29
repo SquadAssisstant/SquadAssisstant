@@ -2233,40 +2233,22 @@ className={`overflow-hidden rounded-xl border ${
             ) : null}
 
             {battleRange === "Individual" ? (
-              <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Saved Report File</div>
-                  <select
-                    value={selectedBattleGroupId}
-                    onChange={(e) => setSelectedBattleGroupId(e.target.value)}
-                    className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
-                  >
-                    <option value="">— Select report file —</option>
-                    {battleGroups.map((group) => (
-                      <option key={group.id} value={String(group.id)}>
-                        {group.label} • {group.item_count ?? 0} image{(group.item_count ?? 0) === 1 ? "" : "s"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Analyzed Report Record</div>
-                  <select
-  value={selectedBattleReportFileId}
-  onChange={(e) => setSelectedBattleReportFileId(e.target.value)}
-  className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm"
->
-  <option value="">— Select report file —</option>
-  {battleReports.map((report) => (
-    <option key={report.id} value={String(report.id)}>
-      {report.label} • {report.page_count ?? 0} page{(report.page_count ?? 0) === 1 ? "" : "s"}
-    </option>
-  ))}
-</select>
-                </div>
-              </div>
-            ) : null}
+  <div className="mt-4">
+    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Saved Report File</div>
+    <select
+      value={selectedBattleReportFileId}
+      onChange={(e) => setSelectedBattleReportFileId(e.target.value)}
+      className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+    >
+      <option value="">— Select report file —</option>
+      {battleReports.map((report) => (
+        <option key={report.id} value={String(report.id)}>
+          Report #{report.id.slice(0, 8)} • {report.battle_report_pages?.length ?? 0} page{(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} • {fmtDate(report.created_at)}
+        </option>
+      ))}
+    </select>
+  </div>
+) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
