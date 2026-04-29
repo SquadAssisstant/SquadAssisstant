@@ -808,35 +808,26 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     }
   }, [loadUploadsByKinds]);
 
-  const loadBattleGroups = useCallback(async () => {
-    setLoadingBattleGroups(true);
-    setBattleGroupErr(null);
+  const loadBattleReports = useCallback(async () => {
+  setLoadingBattleReports(true);
+  setBattleReportFileErr(null);
 
-    try {
-      const res = await fetch("/api/battle/groups?limit=200", {
-        credentials: "include",
-      });
-      const json = await safeJson<BattleGroupListResponse>(res);
+  try {
+    const res = await fetch("/api/battle/reports", { cache: "no-store" });
+    const data = await safeJson<BattleReportListResponse>(res);
 
-      if (!res.ok) {
-        setBattleGroupErr(json?.error ?? `Failed to load battle files (${res.status})`);
-        return;
-      }
-
-      const groups: BattleGroupSummary[] =
-        json && Array.isArray(json.groups) ? (json.groups as BattleGroupSummary[]) : [];
-
-      setBattleGroups(groups);
-
-      if (!selectedBattleGroupId && groups[0]) {
-        setSelectedBattleGroupId(String(groups[0].id));
-      }
-    } catch (e: any) {
-      setBattleGroupErr(e?.message ?? "Failed to load battle files");
-    } finally {
-      setLoadingBattleGroups(false);
+    if (!res.ok || !data?.reports) {
+      throw new Error(data?.error || "Failed to load saved battle reports");
     }
-  }, [selectedBattleGroupId]);
+
+    setBattleReports(data.reports ?? []);
+  } catch (e: any) {
+    setBattleReportFileErr(e?.message ?? "Failed to load saved battle reports");
+    setBattleReports([]);
+  } finally {
+    setLoadingBattleReports(false);
+  }
+}, []);
 
   const loadBattleGroupDetail = useCallback(async (groupId: string) => {
     if (!groupId) {
