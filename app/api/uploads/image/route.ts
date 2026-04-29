@@ -209,11 +209,13 @@ export async function POST(req: Request) {
 
     battleReportPageId = pageInsert.data.id;
   }
-  return NextResponse.json({
+  
+    return NextResponse.json({
     ok: true,
     id: ins.data.id,
     kind: ins.data.kind,
     storage_path: ins.data.storage_path,
     created_at: ins.data.created_at,
+    report_id: battleReportId,
+    page_id: battleReportPageId,
   });
-}
