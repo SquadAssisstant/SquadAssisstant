@@ -2316,25 +2316,6 @@ className={`overflow-hidden rounded-xl border ${
                   ) : null}
                 </div>
 
-                {selectedBattleGroup ? (
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <div className="text-sm font-medium text-white">{selectedBattleGroup.label}</div>
-                    <div className="mt-1 text-xs text-white/45">
-                      {selectedBattleGroupItems.length} image{selectedBattleGroupItems.length === 1 ? "" : "s"} in this file
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {selectedBattleGroupItems.map((item) => (
-                        <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                          <div className="text-sm text-white">Image #{item.position + 1}</div>
-                          <div className="mt-1 text-xs text-white/45">
-                            Upload #{item.upload_id} • {fmtDate(item.upload?.created_at ?? item.created_at)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </SectionCard>
 
