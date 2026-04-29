@@ -1523,15 +1523,14 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
   }, [optimizerOpen, loadHeroesRoster, loadOptimizerSavedFiles]);
 
     useEffect(() => {
-    if (selectedBattleGroupId) {
-      void loadBattleGroupDetail(selectedBattleGroupId);
-      setSelectedBattleReportId("");
-    } else {
-      setSelectedBattleGroup(null);
-      setSelectedBattleGroupItems([]);
-      setSelectedBattleReportId("");
-    }
-  }, [loadBattleGroupDetail, selectedBattleGroupId]);
+  if (selectedBattleReportFileId) {
+    void loadBattleReportDetail(selectedBattleReportFileId);
+    setSelectedBattleReportId("");
+  } else {
+    setSelectedBattleReportFile(null);
+    setSelectedBattleReportId("");
+  }
+}, [loadBattleReportDetail, selectedBattleReportFileId]);
 
   useEffect(() => {
     if (selectedOptimizerSavedId) {
