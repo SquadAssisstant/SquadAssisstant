@@ -829,36 +829,20 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
   }
 }, []);
 
-  const loadBattleGroupDetail = useCallback(async (groupId: string) => {
-    if (!groupId) {
-      setSelectedBattleGroup(null);
-      setSelectedBattleGroupItems([]);
+  const loadBattleReportDetail = useCallback(
+  async (reportId: string) => {
+    if (!reportId) {
+      setSelectedBattleReportFile(null);
       return;
     }
 
-    setBattleGroupErr(null);
+    const found =
+      battleReports.find((report) => String(report.id) === String(reportId)) ?? null;
 
-    try {
-      const res = await fetch(`/api/battle/groups?group_id=${encodeURIComponent(groupId)}`, {
-        credentials: "include",
-      });
-      const json = await safeJson<BattleGroupDetailResponse>(res);
-
-      if (!res.ok) {
-        setBattleGroupErr(json?.error ?? `Failed to load battle file (${res.status})`);
-        return;
-      }
-
-      const group: BattleGroupSummary | null = json?.group ?? null;
-      const items: BattleGroupItem[] =
-        json && Array.isArray(json.items) ? (json.items as BattleGroupItem[]) : [];
-
-      setSelectedBattleGroup(group);
-      setSelectedBattleGroupItems(items);
-    } catch (e: any) {
-      setBattleGroupErr(e?.message ?? "Failed to load battle file");
-    }
-  }, []);
+    setSelectedBattleReportFile(found);
+  },
+  [battleReports]
+)
 
     const loadHeroesRoster = useCallback(async () => {
     setLoadingHeroesRoster(true);
