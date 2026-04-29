@@ -623,12 +623,11 @@ export default function Page() {
   const [battleAnalyses, setBattleAnalyses] = useState<BattleAnalysisRow[]>([]);
   const [selectedBattleReportId, setSelectedBattleReportId] = useState<string>("");
 
-  const [battleGroups, setBattleGroups] = useState<BattleGroupSummary[]>([]);
-  const [loadingBattleGroups, setLoadingBattleGroups] = useState(false);
-  const [selectedBattleGroupId, setSelectedBattleGroupId] = useState<string>("");
-  const [selectedBattleGroup, setSelectedBattleGroup] = useState<BattleGroupSummary | null>(null);
-  const [selectedBattleGroupItems, setSelectedBattleGroupItems] = useState<BattleGroupItem[]>([]);
-  const [battleGroupErr, setBattleGroupErr] = useState<string | null>(null);
+  const [battleReports, setBattleReports] = useState<BattleReport[]>([]);
+const [loadingBattleReports, setLoadingBattleReports] = useState(false);
+const [selectedBattleReportFileId, setSelectedBattleReportFileId] = useState<string>("");
+const [selectedBattleReportFile, setSelectedBattleReportFile] = useState<BattleReport | null>(null);
+const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(null);
 
   const [heroesRoster, setHeroesRoster] = useState<HeroRosterListItem[]>([]);
   const [loadingHeroesRoster, setLoadingHeroesRoster] = useState(false);
