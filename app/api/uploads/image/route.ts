@@ -114,6 +114,101 @@ export async function POST(req: Request) {
     );
   }
 
+   let battleReportId: string | null = null;
+  let battleReportPageId: string | null = null;
+
+  if (kind === "battle_report") {
+    const requestedReportId = String(form.get("report_id") ?? "").trim();
+
+    if (requestedReportId) {
+      const reportCheck = await sb
+        .from("battle_reports")
+        .select("id, raw_storage_path")
+        .eq("id", requestedReportId)
+        .eq("profile_id", s.profileId)
+        .single();
+
+      if (reportCheck.error || !reportCheck.data) {
+        return NextResponse.json(
+          { ok: false, error: "Battle report not found for this profile" },
+          { status: 404 }
+        );
+      }
+
+      battleReportId = reportCheck.data.id;
+
+      if (!reportCheck.data.raw_storage_path) {
+        const reportUpdate = await sb
+          .from("battle_reports")
+          .update({ raw_storage_path: storagePath })
+          .eq("id", battleReportId)
+          .eq("profile_id", s.profileId);
+
+        if (reportUpdate.error) {
+          return NextResponse.json(
+            { ok: false, error: reportUpdate.error.message },
+            { status: 500 }
+          );
+        }
+      }
+    } else {
+      const reportCreate = await sb
+        .from("battle_reports")
+        .insert({
+          profile_id: s.profileId,
+          raw_storage_path: storagePath,
+        })
+        .select("id")
+        .single();
+
+      if (reportCreate.error) {
+        return NextResponse.json(
+          { ok: false, error: reportCreate.error.message },
+          { status: 500 }
+        );
+      }
+
+      battleReportId = reportCreate.data.id;
+    }
+
+    const existingPages = await sb
+      .from("battle_report_pages")
+      .select("id", { count: "exact", head: true })
+      .eq("report_id", battleReportId);
+
+    if (existingPages.error) {
+      return NextResponse.json(
+        { ok: false, error: existingPages.error.message },
+        { status: 500 }
+      );
+    }
+
+    const pageIndex = existingPages.count ?? 0;
+
+    const pageInsert = await sb
+      .from("battle_report_pages")
+      .insert({
+        report_id: battleReportId,
+        profile_id: s.profileId,
+        storage_bucket: bucket,
+        storage_path: storagePath,
+        page_index: pageIndex,
+        mime: file.type,
+        bytes: buf.length,
+        sha256,
+      })
+      .select("id")
+      .single();
+
+    if (pageInsert.error) {
+      return NextResponse.json(
+        { ok: false, error: pageInsert.error.message },
+        { status: 500 }
+      );
+    }
+
+    battleReportPageId = pageInsert.data.id;
+  }
   return NextResponse.json({
     ok: true,
     id: ins.data.id,
