@@ -628,6 +628,9 @@ const [loadingBattleReports, setLoadingBattleReports] = useState(false);
 const [selectedBattleReportFileId, setSelectedBattleReportFileId] = useState<string>("");
 const [selectedBattleReportFile, setSelectedBattleReportFile] = useState<BattleReport | null>(null);
 const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(null);
+  const selectedBattleReportFileLabel = selectedBattleReportFile
+  ? `Report #${selectedBattleReportFile.id.slice(0, 8)}`
+  : "";
 
   const [heroesRoster, setHeroesRoster] = useState<HeroRosterListItem[]>([]);
   const [loadingHeroesRoster, setLoadingHeroesRoster] = useState(false);
@@ -842,8 +845,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     setSelectedBattleReportFile(found);
   },
   [battleReports]
-)
-
+);
     const loadHeroesRoster = useCallback(async () => {
     setLoadingHeroesRoster(true);
     setHeroesRosterErr(null);
@@ -1192,7 +1194,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
           body: JSON.stringify({
             message:
               battleQuestion ||
-              `Explain this report${selectedBattleGroup?.label ? ` for battle file "${selectedBattleGroup.label}"` : ""}.`,
+              `Explain this report${selectedBattleReportFileLabel ? ` for battle file "${selectedBattleReportFileLabel}"` : ""}.`,
             detail: true,
           }),
         });
@@ -1210,7 +1212,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
             json?.context_summary ?? battleContextSummary,
             battleCustomBegin,
             battleCustomFinish,
-            selectedBattleGroup?.label
+            selectedBattleReportFileLabel
           )
         );
         setBattleAnswer(json?.answer ?? "");
@@ -1244,7 +1246,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
           json?.context_summary ?? battleContextSummary,
           battleCustomBegin,
           battleCustomFinish,
-          selectedBattleGroup?.label
+          selectedBattleReportFileLabel
         )
       );
       setBattleAnswer(json?.answer ?? "");
@@ -1261,7 +1263,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     battleQuestion,
     battleRange,
     filteredBattleAnalyses,
-    selectedBattleGroup?.label,
+    selectedBattleReportFileLabel,
     selectedBattleReportId,
   ]);
 
@@ -1473,7 +1475,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     }
   }, [
     loadBattleAnalyzerData,
-    loadBattleGroups,
+    loadBattleReports,
     loadBattleUploads,
     loadDroneUploads,
     loadHeroUploads,
@@ -1488,12 +1490,12 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     void loadDroneUploads();
     void loadOverlordUploads();
     void loadBattleUploads();
-    void loadBattleGroups();
+    void loadBattleReports();
     void loadHeroesRoster();
     void loadOptimizerSavedFiles();
     void loadPlayerState();
   }, [
-    loadBattleGroups,
+    loadBattleReports,
     loadBattleUploads,
     loadDroneUploads,
     loadHeroUploads,
@@ -1510,11 +1512,11 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
   }, [heroSubModalOpen, loadHeroProfile, selectedHeroUploadId]);
 
   useEffect(() => {
-    if (battleOpen) {
-      void loadBattleAnalyzerData();
-      void loadBattleReports();
-  }, [battleOpen, loadBattleAnalyzerData, loadBattleReports]);
-
+  if (battleOpen) {
+    void loadBattleAnalyzerData();
+    void loadBattleReports();
+  }
+}, [battleOpen, loadBattleAnalyzerData, loadBattleReports]);
   useEffect(() => {
     if (optimizerOpen) {
       void loadHeroesRoster();
@@ -1742,20 +1744,20 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
             </SectionCard>
 
             <SectionCard
-              title="Battle Files"
-              subtitle={loadingBattleGroups ? "Loading…" : `${battleGroups.length} items`}
-            >
-              <div className="grid gap-3">
-                {battleGroups.map((g) => (
-                  <div key={g.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <div className="text-sm font-medium text-white">{g.label}</div>
-                    <div className="mt-1 text-xs text-white/45">
-                      {g.item_count ?? 0} image{(g.item_count ?? 0) === 1 ? "" : "s"} • {fmtDate(g.created_at)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
+  title="Battle Files"
+  subtitle={loadingBattleReports ? "Loading…" : `${battleReports.length} items`}
+>
+  <div className="grid gap-3">
+    {battleReports.map((report) => (
+      <div key={report.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+        <div className="text-sm font-medium text-white">Report #{report.id.slice(0, 8)}</div>
+        <div className="mt-1 text-xs text-white/45">
+          {report.battle_report_pages?.length ?? 0} page{(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} • {fmtDate(report.created_at)}
+        </div>
+      </div>
+    ))}
+  </div>
+</SectionCard>
           </div>
         </div>
       </ModalShell>
@@ -2173,9 +2175,9 @@ className={`overflow-hidden rounded-xl border ${
           {battleErr ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleErr}</div>
           ) : null}
-          {battleGroupErr ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleGroupErr}</div>
-          ) : null}
+          {battleReportFileErr ? (
+  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleReportFileErr}</div>
+) : null}
 
           <SectionCard title="Analyzer Controls" subtitle="Choose the report scope and run an analysis">
             <div className="grid gap-4 md:grid-cols-[220px_1fr]">
@@ -2269,13 +2271,13 @@ className={`overflow-hidden rounded-xl border ${
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 onClick={() => {
-                  void loadBattleGroups();
+                  void loadBattleReports();
                   void loadBattleAnalyzerData();
                 }}
-                disabled={battleBusy || loadingBattleGroups}
+                disabled={battleBusy || loadingBattleReports}
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 disabled:opacity-40"
               >
-                {battleBusy || loadingBattleGroups ? "Loading…" : "Reload Reports"}
+                {battleBusy || loadingBattleReports ? "Loading…" : "Reload Reports"}
               </button>
               <button
                 onClick={() => void runBattleAnalyzer()}
@@ -2288,36 +2290,36 @@ className={`overflow-hidden rounded-xl border ${
           </SectionCard>
 
           <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-            <SectionCard
-              title="Saved Report Files"
-              subtitle={`${battleGroups.length} file${battleGroups.length === 1 ? "" : "s"} saved`}
-            >
-              <div className="space-y-4">
-                <div className="grid gap-3">
-                  {battleGroups.map((group) => (
-                    <button
-                      key={group.id}
-                      onClick={() => setSelectedBattleGroupId(String(group.id))}
-                      className={cx(
-                        "rounded-2xl border p-3 text-left",
-                        String(group.id) === selectedBattleGroupId
-                          ? "border-emerald-400/30 bg-emerald-500/10"
-                          : "border-white/10 bg-black/20"
-                      )}
-                    >
-                      <div className="text-sm font-medium text-white">{group.label}</div>
-                      <div className="mt-1 text-xs text-white/45">
-                        {group.item_count ?? 0} image{(group.item_count ?? 0) === 1 ? "" : "s"} • {fmtDate(group.created_at)}
-                      </div>
-                    </button>
-                  ))}
-                  {!battleGroups.length ? (
-                    <div className="text-sm text-white/50">No saved report files yet.</div>
-                  ) : null}
-                </div>
+  <SectionCard
+    title="Saved Report Files"
+    subtitle={`${battleReports.length} file${battleReports.length === 1 ? "" : "s"} saved`}
+  >
+    <div className="space-y-4">
+      <div className="grid gap-3">
+        {battleReports.map((report) => (
+          <button
+            key={report.id}
+            onClick={() => setSelectedBattleReportFileId(String(report.id))}
+            className={cx(
+              "rounded-2xl border p-3 text-left",
+              String(report.id) === selectedBattleReportFileId
+                ? "border-emerald-400/30 bg-emerald-500/10"
+                : "border-white/10 bg-black/20"
+            )}
+          >
+            <div className="text-sm font-medium text-white">Report #{report.id.slice(0, 8)}</div>
+            <div className="mt-1 text-xs text-white/45">
+              {report.battle_report_pages?.length ?? 0} page{(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} • {fmtDate(report.created_at)}
+            </div>
+          </button>
+        ))}
 
-              </div>
-            </SectionCard>
+        {!battleReports.length ? (
+          <div className="text-sm text-white/50">No saved report files yet.</div>
+        ) : null}
+      </div>
+    </div>
+  </SectionCard>
 
             <SectionCard title="Analysis Output" subtitle={battleContextSummary || "Run the analyzer to load current context"}>
               <div className="space-y-4">
