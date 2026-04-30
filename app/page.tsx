@@ -1151,12 +1151,12 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
     try {
       if (battleRange === "Individual") {
-        if (!selectedBattleReportId) {
-          setBattleErr("Select an individual analyzed report first.");
-          return;
-        }
+  if (!selectedBattleReportFileId) {
+    setBattleErr("Select a saved report file first.");
+    return;
+  }
 
-        const res = await fetch(`/api/battle/analyze/${selectedBattleReportId}`, {
+  const res = await fetch(`/api/battle/analyze/${selectedBattleReportFileId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -1176,7 +1176,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
         setBattleSummary(
           summarizeFilteredBattles(
-            filteredBattleAnalyses.filter((r) => String(r.id) === selectedBattleReportId),
+            filteredBattleAnalyses.filter((r) => String(r.id) === selectedBattleReportFileId),
             battleRange,
             json?.context_summary ?? battleContextSummary,
             battleCustomBegin,
@@ -1233,7 +1233,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     battleRange,
     filteredBattleAnalyses,
     selectedBattleReportFileLabel,
-    selectedBattleReportId,
+    selectedBattleReportFileId,
   ]);
 
   const runOptimizer = useCallback(async () => {
@@ -1468,10 +1468,8 @@ if (isBattleUploadKind(uploadKind)) {
     useEffect(() => {
   if (selectedBattleReportFileId) {
     void loadBattleReportDetail(selectedBattleReportFileId);
-    setSelectedBattleReportId("");
   } else {
     setSelectedBattleReportFile(null);
-    setSelectedBattleReportId("");
   }
 }, [loadBattleReportDetail, selectedBattleReportFileId]);
 
