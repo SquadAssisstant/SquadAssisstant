@@ -16,7 +16,7 @@ function getCookieFromHeader(cookieHeader: string | null, name: string): string 
 }
 
 async function requireSessionFromReq(req: Request): Promise<{ profileId: string } | null> {
-  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName);
+  const token = getCookieFromHeader(req.headers.get("cookie"), sessionCookieName());
   if (!token) return null;
 
   try {
