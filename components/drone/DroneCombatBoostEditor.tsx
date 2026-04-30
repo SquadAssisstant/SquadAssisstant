@@ -106,9 +106,14 @@ export function DroneCombatBoostEditor({
     setErr(null);
     setMsg(null);
     try {
-      const res = await fetch(`/api/drone/combat_boost/get?owner_id=${encodeURIComponent(ownerId)}`, {
-        credentials: "include",
-      });
+      if (!selectedUploadId) {
+  setLoading(false);
+  return;
+}
+
+const res = await fetch(`/api/drone/combat_boost/details?upload_id=${selectedUploadId}`, {
+  credentials: "include",
+});
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Load failed");
       if (json?.row?.value?.kind === "drone_combat_boost") {
@@ -131,10 +136,9 @@ export function DroneCombatBoostEditor({
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          owner_id: ownerId,
-          value: { ...value, saved_at: nowIso() },
-          source_urls: [],
-        }),
+  upload_id: selectedUploadId,
+  value: { ...value, saved_at: nowIso() },
+}),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
@@ -226,9 +230,9 @@ export function DroneCombatBoostEditor({
   }, [value]);
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerId]);
+  load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedUploadId]);
 
   if (loading) return <div className="text-sm text-white/60">Loading Combat Boost…</div>;
 
