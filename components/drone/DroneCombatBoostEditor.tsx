@@ -81,10 +81,8 @@ function defaultSet(troop_type: TroopType): ChipSet {
 }
 
 export function DroneCombatBoostEditor({
-  ownerId,
   selectedUploadId,
 }: {
-  ownerId: string;
   selectedUploadId: number | null;
 }) {
   const [loading, setLoading] = useState(true);
