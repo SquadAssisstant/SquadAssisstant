@@ -102,37 +102,6 @@ type BattleAnalyzePostResponse = {
   error?: string;
 };
 
-type BattleGroupSummary = {
-  id: number;
-  profile_id?: string;
-  label: string;
-  note?: string | null;
-  created_at?: string;
-  updated_at?: string;
-  item_count?: number;
-};
-
-type BattleGroupItem = {
-  id: number;
-  group_id: number;
-  upload_id: number;
-  position: number;
-  created_at?: string;
-  upload?: UploadItem | null;
-};
-
-type BattleGroupListResponse = {
-  ok?: boolean;
-  groups?: BattleGroupSummary[];
-  error?: string;
-};
-
-type BattleGroupDetailResponse = {
-  ok?: boolean;
-  group?: BattleGroupSummary;
-  items?: BattleGroupItem[];
-  error?: string;
-};
 type BattleReportPage = {
   id: string;
   storage_path: string;
