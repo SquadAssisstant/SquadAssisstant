@@ -2026,7 +2026,7 @@ className={`overflow-hidden rounded-xl border ${
                 <div className="space-y-6">
                   {droneOwnerId ? (
                     <>
-                      <DroneCombatBoostEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
+                      <DroneCombatBoostEditor selectedUploadId={selectedDroneUploadId} />
                       <DroneBoostChipsEditor ownerId={droneOwnerId} selectedUploadId={selectedDroneUploadId} />
                     </>
                   ) : (
