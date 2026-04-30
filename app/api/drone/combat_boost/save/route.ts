@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     }
 
     // verify upload belongs to this user
-    const sb = supabaseAdmin();
+    const sb = supabaseAdmin() as any;
 
 const { data: upload, error: uploadErr } = await sb
   .from("player_uploads")
