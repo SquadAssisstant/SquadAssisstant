@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   buildBattleContextFromRequest,
+  requireSessionFromReq,
   summarizeBattleContext,
 } from "@/app/api/battle/_lib/context";
 import { analyzeParsedReport } from "@/app/api/battle/_lib/analyzer";
@@ -12,6 +13,7 @@ type BattleRow = {
   profile_id?: string | null;
   created_at?: string | null;
   parsed?: any;
+  battle_report_pages?: any[];
 };
 
 type AnalyzeResponse = {
@@ -24,6 +26,7 @@ type AnalyzeResponse = {
   analyses?: Array<{
     id: number | string;
     created_at: string | null;
+    page_count: number;
     analysis: any;
   }>;
   answer?: string;
@@ -44,12 +47,27 @@ function lines(value: unknown): string[] {
   return [String(value)];
 }
 
-async function loadBattleRows(limit: number): Promise<BattleRow[]> {
+async function loadBattleRows(profileId: string, limit: number): Promise<BattleRow[]> {
   const sb: any = supabaseAdmin();
 
   const { data, error } = await sb
     .from("battle_reports")
-    .select("*")
+    .select(`
+      id,
+      profile_id,
+      created_at,
+      parsed,
+      battle_report_pages (
+        id,
+        storage_bucket,
+        storage_path,
+        page_index,
+        mime,
+        bytes,
+        created_at
+      )
+    `)
+    .eq("profile_id", profileId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -60,27 +78,34 @@ async function loadBattleRows(limit: number): Promise<BattleRow[]> {
   return Array.isArray(data) ? (data as BattleRow[]) : [];
 }
 
-function buildAnalyses(rows: BattleRow[]) {
-  return rows.map((r) => ({
-    id: r.id,
-    created_at: r.created_at ?? null,
-    analysis: analyzeParsedReport(r.parsed ?? {}),
-  }));
+function buildAnalyses(rows: BattleRow[], context: any) {
+  return rows.map((r) => {
+    const pages = Array.isArray(r.battle_report_pages) ? r.battle_report_pages : [];
+
+    return {
+      id: r.id,
+      created_at: r.created_at ?? null,
+      page_count: pages.length,
+      analysis: analyzeParsedReport({
+        parsedReport: {
+          ...(r.parsed ?? {}),
+          pages,
+          page_count: pages.length,
+        },
+        context,
+      }),
+    };
+  });
 }
 
-function buildSummary(
-  rows: BattleRow[],
-  contextSummary: string
-): string {
+function buildSummary(rows: BattleRow[], contextSummary: string): string {
   const output: string[] = [];
 
   output.push("Battle report analyzer");
   output.push(`Reports loaded: ${rows.length}`);
 
   if (rows.length > 0) {
-    output.push(
-      `Newest report: #${rows[0].id} • ${rows[0].created_at ?? "unknown"}`
-    );
+    output.push(`Newest report: #${rows[0].id} • ${rows[0].created_at ?? "unknown"}`);
   } else {
     output.push("No reports found.");
   }
@@ -109,13 +134,11 @@ function buildAnswer(
     out.push("");
 
     analyses.slice(0, 15).forEach((entry, index) => {
-      out.push(
-        `Report ${index + 1} • ID ${entry.id} • ${
-          entry.created_at ?? "unknown"
-        }`
-      );
+      out.push(`Report ${index + 1} • ID ${entry.id} • ${entry.created_at ?? "unknown"}`);
+      out.push(`Pages attached: ${entry.page_count}`);
 
       const summaryLines = lines(entry.analysis?.summary);
+
       if (summaryLines.length) {
         out.push(...summaryLines);
       } else {
@@ -134,14 +157,27 @@ function buildAnswer(
 
 export async function GET(req: Request) {
   try {
+    const session = await requireSessionFromReq(req);
+
+    if (!session?.profileId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          summary: "",
+          context_summary: "",
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
     const url = new URL(req.url);
     const limit = parseLimit(url.searchParams.get("limit"));
 
-    const rows = await loadBattleRows(limit);
-    const analyses = buildAnalyses(rows);
-
     const context = await buildBattleContextFromRequest(req);
     const contextSummary = summarizeBattleContext(context);
+    const rows = await loadBattleRows(session.profileId, limit);
+    const analyses = buildAnalyses(rows, context);
 
     const response: AnalyzeResponse = {
       ok: true,
@@ -169,6 +205,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const session = await requireSessionFromReq(req);
+
+    if (!session?.profileId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          summary: "",
+          context_summary: "",
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
 
     const message =
@@ -176,15 +226,12 @@ export async function POST(req: Request) {
         ? body.message.trim()
         : "Analyze my battle reports using saved player data first, then fill gaps with estimation.";
 
-    const limit = parseLimit(
-      body?.limit != null ? String(body.limit) : null
-    );
-
-    const rows = await loadBattleRows(limit);
-    const analyses = buildAnalyses(rows);
+    const limit = parseLimit(body?.limit != null ? String(body.limit) : null);
 
     const context = await buildBattleContextFromRequest(req);
     const contextSummary = summarizeBattleContext(context);
+    const rows = await loadBattleRows(session.profileId, limit);
+    const analyses = buildAnalyses(rows, context);
 
     const response: AnalyzeResponse = {
       ok: true,
