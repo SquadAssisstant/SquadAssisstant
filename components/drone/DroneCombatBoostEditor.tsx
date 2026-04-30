@@ -170,7 +170,7 @@ const res = await fetch(`/api/drone/combat_boost/details?upload_id=${selectedUpl
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ upload_id: selectedUploadId, mode: "chips" }),
+        body: JSON.stringify({ upload_id: selectedUploadId, mode: "combat_boost" }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Extract failed");
