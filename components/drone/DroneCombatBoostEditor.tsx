@@ -127,6 +127,10 @@ const res = await fetch(`/api/drone/combat_boost/details?upload_id=${selectedUpl
   }
 
   async function save() {
+  if (!selectedUploadId) {
+    setErr("Select a drone screenshot first.");
+    return;
+  }
     setSaving(true);
     setErr(null);
     setMsg(null);
