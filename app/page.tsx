@@ -1399,7 +1399,6 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
     try {
       const apiKind = normalizeUploadKindForApi(uploadKind);
-      const createdUploadIds: number[] = [];
 
       for (const file of uploadFiles) {
         const form = new FormData();
@@ -1416,40 +1415,13 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
         if (!res.ok) {
           throw new Error(payload?.error ?? `Upload failed (${res.status})`);
         }
-
-        const uploadId = Number(payload?.upload?.id ?? payload?.id);
-        if (Number.isFinite(uploadId) && uploadId > 0) {
-          createdUploadIds.push(uploadId);
-        }
       }
 
       let extraMsg = "";
 
-      if (isBattleUploadKind(uploadKind)) {
-        const label = window.prompt("Name this battle report grouping:", "");
-
-        if (label && label.trim()) {
-          const groupRes = await fetch("/api/battle/groups", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              label: label.trim(),
-              upload_ids: createdUploadIds,
-            }),
-          });
-
-          const groupJson = await safeJson<any>(groupRes);
-          if (!groupRes.ok) {
-            throw new Error(groupJson?.error ?? `Failed to create battle report file (${groupRes.status})`);
-          }
-
-          extraMsg = ` Battle file saved: ${label.trim()}`;
-        } else {
-          extraMsg = " Battle screenshots uploaded, but no file label was saved.";
-        }
-      }
-
+if (isBattleUploadKind(uploadKind)) {
+  extraMsg = " Battle report file saved.";
+}
       setUploadMsg(`Uploaded ${uploadFiles.length} screenshot${uploadFiles.length === 1 ? "" : "s"} ✅${extraMsg}`);
       setUploadFiles([]);
 
