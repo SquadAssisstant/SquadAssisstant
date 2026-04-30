@@ -47,8 +47,10 @@ export async function POST(req: Request) {
     }
 
     // verify upload belongs to this user
-    const { data: upload, error: uploadErr } = await supabaseAdmin
-      .from("uploads")
+    const sb = supabaseAdmin();
+
+const { data: upload, error: uploadErr } = await sb
+  .from("player_uploads")
       .select("id, profile_id")
       .eq("id", uploadId)
       .single();
@@ -67,8 +69,8 @@ export async function POST(req: Request) {
       },
     };
 
-    const { data, error } = await supabaseAdmin
-      .from("facts")
+    const { data, error } = await sb
+  .from("facts")
       .upsert(payload)
       .select()
       .single();
