@@ -240,15 +240,23 @@ export async function POST(req: Request) {
     const rows = await loadBattleRows(session.profileId, limit);
     const analyses = buildAnalyses(rows, context);
 
-    const response: AnalyzeResponse = {
-      ok: true,
-      mode: "aggregate",
-      summary: buildSummary(rows, contextSummary),
-      context_summary: contextSummary,
-      context,
-      analyses,
-      answer: buildAnswer(message, analyses, contextSummary),
-    };
+    const firstAnalysis = analyses[0]?.analysis ?? null;
+
+const response: AnalyzeResponse = {
+  ok: true,
+  mode: "aggregate",
+  summary: buildSummary(rows, contextSummary),
+  context_summary: contextSummary,
+  context,
+  analyses,
+  answer: buildAnswer(message, analyses, contextSummary),
+
+  comparison: firstAnalysis?.comparison ?? null,
+  factor_breakdown: firstAnalysis?.factor_breakdown ?? null,
+  damage_model: firstAnalysis?.damage_model ?? null,
+  reasons: firstAnalysis?.reasons ?? [],
+  missing_data: firstAnalysis?.missing_data ?? [],
+};
 
     return NextResponse.json(response);
   } catch (e: any) {
