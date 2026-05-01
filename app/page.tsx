@@ -1169,62 +1169,25 @@ setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
   }, [selectedBattleReportId]);
 
   const runBattleAnalyzer = useCallback(async () => {
-    setBattleBusy(true);
-    setBattleErr(null);
-    setBattleAnswer("");
+  setBattleBusy(true);
+  setBattleErr(null);
+  setBattleAnswer("");
 
-    try {
-      if (battleRange === "Individual") {
-  if (!selectedBattleReportFileId) {
-    setBattleErr("Select a saved report file first.");
-    return;
-  }
+  try {
+    if (battleRange === "Individual") {
+      if (!selectedBattleReportFileId) {
+        setBattleErr("Select a saved report file first.");
+        return;
+      }
 
-  const res = await fetch(`/api/battle/analyze/${selectedBattleReportFileId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            message:
-  "Generate a simple battle report summary and include the full deterministic breakdown payload for Main Chat handoff.",
-            detail: true,
-          }),
-        });
-
-        const json = await safeJson<BattleAnalyzePostResponse>(res);
-        if (!res.ok) {
-          setBattleErr(json?.error ?? `Battle analyzer failed (${res.status})`);
-          return;
-        }
-
-        setBattleSummary(
-          summarizeFilteredBattles(
-            filteredBattleAnalyses.filter((r) => String(r.id) === selectedBattleReportFileId),
-            battleRange,
-            json?.context_summary ?? battleContextSummary,
-            battleCustomBegin,
-            battleCustomFinish,
-            selectedBattleReportFileLabel
-          )
-        );
-        setBattleAnswer(json?.answer ?? "");
-setBattleContextSummary(json?.context_summary ?? battleContextSummary);
-setBattleComparison(json?.comparison ?? null);
-setBattleFactorBreakdown(json?.factor_breakdown ?? null);
-setBattleDamageModel(json?.damage_model ?? null);
-setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
-setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
-return;
-
-      const res = await fetch("/api/battle/analyze", {
+      const res = await fetch(`/api/battle/analyze/${selectedBattleReportFileId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           message:
-  "Analyze all selected battle reports and include full deterministic breakdown payload for Main Chat.",
+            "Generate a simple battle report summary and include the full deterministic breakdown payload for Main Chat handoff.",
           detail: true,
-          limit: 200,
         }),
       });
 
@@ -1236,7 +1199,7 @@ return;
 
       setBattleSummary(
         summarizeFilteredBattles(
-          filteredBattleAnalyses,
+          filteredBattleAnalyses.filter((r) => String(r.id) === selectedBattleReportFileId),
           battleRange,
           json?.context_summary ?? battleContextSummary,
           battleCustomBegin,
@@ -1244,26 +1207,67 @@ return;
           selectedBattleReportFileLabel
         )
       );
+
       setBattleAnswer(json?.answer ?? "");
-setBattleContextSummary(json?.context_summary ?? battleContextSummary);
-setBattleComparison(json?.comparison ?? null);
-setBattleFactorBreakdown(json?.factor_breakdown ?? null);
-setBattleDamageModel(json?.damage_model ?? null);
-setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
-setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
-    } catch (e: any) {
-      setBattleErr(e?.message ?? "Battle analyzer failed");
-    } finally {
-      setBattleBusy(false);
+      setBattleContextSummary(json?.context_summary ?? battleContextSummary);
+      setBattleComparison(json?.comparison ?? null);
+      setBattleFactorBreakdown(json?.factor_breakdown ?? null);
+      setBattleDamageModel(json?.damage_model ?? null);
+      setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
+      setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
+      return;
     }
-  }, [
-    battleContextSummary,
-    battleCustomBegin,
-    battleCustomFinish,
-    battleRange,
-    filteredBattleAnalyses,
-    selectedBattleReportFileLabel,
-    selectedBattleReportFileId,
+
+    const res = await fetch("/api/battle/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        message:
+          "Analyze all selected battle reports and include full deterministic breakdown payload for Main Chat.",
+        detail: true,
+        limit: 200,
+      }),
+    });
+
+    const json = await safeJson<BattleAnalyzePostResponse>(res);
+    if (!res.ok) {
+      setBattleErr(json?.error ?? `Battle analyzer failed (${res.status})`);
+      return;
+    }
+
+    setBattleSummary(
+      summarizeFilteredBattles(
+        filteredBattleAnalyses,
+        battleRange,
+        json?.context_summary ?? battleContextSummary,
+        battleCustomBegin,
+        battleCustomFinish,
+        selectedBattleReportFileLabel
+      )
+    );
+
+    setBattleAnswer(json?.answer ?? "");
+    setBattleContextSummary(json?.context_summary ?? battleContextSummary);
+    setBattleComparison(json?.comparison ?? null);
+    setBattleFactorBreakdown(json?.factor_breakdown ?? null);
+    setBattleDamageModel(json?.damage_model ?? null);
+    setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
+    setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
+  } catch (e: any) {
+    setBattleErr(e?.message ?? "Battle analyzer failed");
+  } finally {
+    setBattleBusy(false);
+  }
+}, [
+  battleContextSummary,
+  battleCustomBegin,
+  battleCustomFinish,
+  battleRange,
+  filteredBattleAnalyses,
+  selectedBattleReportFileLabel,
+  selectedBattleReportFileId,
+]);
   ]);
 
   const runOptimizer = useCallback(async () => {
