@@ -82,6 +82,64 @@ function blankValue(): BoostChipsValue {
   };
 }
 
+function mergeExtractedBoostChips(
+  current: BoostChipsValue,
+  extracted: BoostChipsValue
+): BoostChipsValue {
+  const next: BoostChipsValue = {
+    ...current,
+    source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+    combat_boost: {
+      ...current.combat_boost,
+      notes: extracted.combat_boost?.notes ?? current.combat_boost?.notes ?? null,
+      raw: {
+        ...(current.combat_boost?.raw ?? {}),
+        ...(extracted.combat_boost?.raw ?? {}),
+      },
+    },
+    chip_sets: { ...current.chip_sets },
+  };
+
+  for (const tt of troopTypes) {
+    const extractedSet = extracted.chip_sets?.[tt];
+    if (!extractedSet) continue;
+
+    const hasExtractedData =
+      extractedSet.displayed_squad_power ||
+      skillTypes.some((skillType) => {
+        const s = extractedSet.skills?.[skillType];
+        return s?.name || s?.chip_power != null || s?.description;
+      });
+
+    if (!hasExtractedData) continue;
+
+    const currentSet = current.chip_sets[tt] ?? blankSet(tt);
+
+    next.chip_sets[tt] = {
+      ...currentSet,
+      label: currentSet.label || extractedSet.label,
+      assigned_squad_slot:
+        currentSet.assigned_squad_slot ?? extractedSet.assigned_squad_slot ?? null,
+      displayed_squad_power:
+        extractedSet.displayed_squad_power ?? currentSet.displayed_squad_power ?? null,
+      skills: { ...currentSet.skills },
+    };
+
+    for (const skillType of skillTypes) {
+      const oldSkill = currentSet.skills[skillType] ?? blankSkill(tt, skillType);
+      const newSkill = extractedSet.skills?.[skillType];
+
+      next.chip_sets[tt].skills[skillType] = {
+        ...oldSkill,
+        name: newSkill?.name ?? oldSkill.name,
+        chip_power: newSkill?.chip_power ?? oldSkill.chip_power,
+        description: newSkill?.description ?? oldSkill.description,
+      };
+    }
+  }
+
+  return next;
+}
 async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
   const text = await res.text().catch(() => "");
   if (!text) return { json: null, text: null };
