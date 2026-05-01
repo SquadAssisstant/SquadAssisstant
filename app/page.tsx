@@ -588,6 +588,7 @@ export default function Page() {
   const [battleErr, setBattleErr] = useState<string | null>(null);
   const [battleSummary, setBattleSummary] = useState<string>("");
   const [battleAnswer, setBattleAnswer] = useState<string>("");
+  const [mainChatTransfer, setMainChatTransfer] = useState<string | null>(null);
   const [battleContextSummary, setBattleContextSummary] = useState<string>("");
   const [battleAnalyses, setBattleAnalyses] = useState<BattleAnalysisRow[]>([]);
   const [selectedBattleReportId, setSelectedBattleReportId] = useState<string>("");
@@ -1524,7 +1525,10 @@ if (isBattleUploadKind(uploadKind)) {
     </div>
   </div>
 
-    <MainChat />
+    <MainChat
+  injectedMessage={mainChatTransfer}
+  onInjectedMessageConsumed={() => setMainChatTransfer(null)}
+/>
 
       <HeroesModal
         open={heroesOpen}
