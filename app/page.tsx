@@ -2139,16 +2139,6 @@ className={`overflow-hidden rounded-xl border ${
                   <option value="All">All</option>
                 </select>
               </div>
-
-              <div>
-                <div className="text-xs uppercase tracking-[0.25em] text-white/45">Question</div>
-                <input
-                  value={battleQuestion}
-                  onChange={(e) => setBattleQuestion(e.target.value)}
-                  placeholder="ex: Why did I lose? What should I improve first?"
-                  className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
-                />
-              </div>
             </div>
 
             {battleRange === "Custom Range" ? (
