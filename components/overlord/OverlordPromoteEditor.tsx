@@ -126,7 +126,16 @@ export function OverlordPromoteEditor({ selectedUploadId }: { selectedUploadId: 
         return;
       }
 
-      setValue(extracted as PromoteValue);
+      setValue((current) => ({
+  ...current,
+  ...extracted,
+  stat_upgrades: extracted.stat_upgrades ?? current.stat_upgrades,
+  boosts: extracted.boosts ?? current.boosts,
+  requirements: extracted.requirements?.length
+    ? extracted.requirements
+    : current.requirements,
+  source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+}));
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
