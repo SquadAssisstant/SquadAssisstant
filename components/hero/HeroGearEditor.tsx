@@ -58,6 +58,82 @@ function blankValue(): HeroGearValue {
   };
 }
 
+function hasBoostData(boost: GearBoost | undefined): boolean {
+  return Boolean(
+    boost?.stat ||
+      boost?.value_raw ||
+      boost?.value_numeric != null
+  );
+}
+
+function hasPieceData(piece: GearPiece | undefined): boolean {
+  return Boolean(
+    piece?.item_name ||
+      piece?.stars != null ||
+      piece?.level != null ||
+      piece?.rarity ||
+      piece?.notes ||
+      piece?.boosts?.some(hasBoostData)
+  );
+}
+
+function mergeBoosts(
+  currentBoosts: GearBoost[],
+  extractedBoosts: GearBoost[]
+): GearBoost[] {
+  const next = [...currentBoosts];
+
+  for (let i = 0; i < extractedBoosts.length; i++) {
+    const extractedBoost = extractedBoosts[i];
+    if (!hasBoostData(extractedBoost)) continue;
+
+    const oldBoost = next[i] ?? {
+      stat: null,
+      value_raw: null,
+      value_numeric: null,
+    };
+
+    next[i] = {
+      ...oldBoost,
+      stat: extractedBoost.stat ?? oldBoost.stat,
+      value_raw: extractedBoost.value_raw ?? oldBoost.value_raw,
+      value_numeric: extractedBoost.value_numeric ?? oldBoost.value_numeric,
+    };
+  }
+
+  return next;
+}
+
+function mergeExtractedHeroGear(
+  current: HeroGearValue,
+  extracted: HeroGearValue
+): HeroGearValue {
+  const next: HeroGearValue = {
+    ...current,
+    source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+    pieces: { ...current.pieces },
+  };
+
+  for (const { key } of gearSlots) {
+    const extractedPiece = extracted.pieces?.[key];
+    if (!hasPieceData(extractedPiece)) continue;
+
+    const oldPiece = current.pieces[key] ?? blankPiece(key);
+
+    next.pieces[key] = {
+      ...oldPiece,
+      slot: key,
+      item_name: extractedPiece.item_name ?? oldPiece.item_name,
+      stars: extractedPiece.stars ?? oldPiece.stars,
+      level: extractedPiece.level ?? oldPiece.level,
+      rarity: extractedPiece.rarity ?? oldPiece.rarity,
+      notes: extractedPiece.notes ?? oldPiece.notes,
+      boosts: mergeBoosts(oldPiece.boosts ?? [], extractedPiece.boosts ?? []),
+    };
+  }
+
+  return next;
+}
 async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
   const text = await res.text().catch(() => "");
   if (!text) return { json: null, text: null };
@@ -145,7 +221,9 @@ export function HeroGearEditor({ selectedUploadId }: { selectedUploadId: number 
         return;
       }
 
-      setValue(extracted as HeroGearValue);
+      setValue((current) =>
+  mergeExtractedHeroGear(current, extracted as HeroGearValue)
+);
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
