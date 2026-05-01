@@ -147,7 +147,29 @@ export function OverlordTrainEditor({ selectedUploadId }: { selectedUploadId: nu
         return;
       }
 
-      setValue(extracted as TrainValue);
+      setValue((current) => ({
+  ...current,
+  ...extracted,
+  bond_title: extracted.bond_title ?? current.bond_title,
+  power: extracted.power ?? current.power,
+  selected_branch: extracted.selected_branch ?? current.selected_branch,
+  branches: {
+    attack: {
+      ...current.branches.attack,
+      ...(extracted.branches?.attack ?? {}),
+    },
+    defense: {
+      ...current.branches.defense,
+      ...(extracted.branches?.defense ?? {}),
+    },
+    hp: {
+      ...current.branches.hp,
+      ...(extracted.branches?.hp ?? {}),
+    },
+  },
+  note: extracted.note ?? current.note,
+  source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+}));
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
