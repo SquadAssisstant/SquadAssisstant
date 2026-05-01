@@ -2344,15 +2344,12 @@ className={`overflow-hidden rounded-xl border ${
   analysis: battleAnswer,
   context_summary: battleContextSummary,
   comparison: battleComparison,
-  factor_breakdown: battleFactorBreakdown,
-  damage_model: battleDamageModel,
   reasons: battleReasons,
   missing_data: battleMissingData,
-  analyses: battleAnalyses,
 };
 
       setMainChatTransfer(
-        `Battle Analyzer Handoff:\n\n${JSON.stringify(payload, null, 2)}`
+        `Battle Analyzer Handoff:\n\n${JSON.stringify(payload)}`
       );
 
       setBattleOpen(false);
