@@ -1195,8 +1195,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
         credentials: "include",
         body: JSON.stringify({
           message:
-            battleQuestion ||
-            `Analyze my ${battleRange} performance using saved player data first, then fill gaps with estimation.`,
+  "Analyze all selected battle reports and include full deterministic breakdown payload for Main Chat.",
           detail: true,
           limit: 200,
         }),
