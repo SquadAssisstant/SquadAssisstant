@@ -583,7 +583,6 @@ export default function Page() {
   const [battleRange, setBattleRange] = useState<BattleRange>("Individual");
   const [battleCustomBegin, setBattleCustomBegin] = useState("");
   const [battleCustomFinish, setBattleCustomFinish] = useState("");
-  const [battleQuestion, setBattleQuestion] = useState("");
   const [battleBusy, setBattleBusy] = useState(false);
   const [battleErr, setBattleErr] = useState<string | null>(null);
   const [battleSummary, setBattleSummary] = useState<string>("");
