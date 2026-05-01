@@ -31,6 +31,13 @@ type AnalyzeResponse = {
   }>;
   answer?: string;
   mode?: string;
+
+  comparison?: any;
+  factor_breakdown?: any;
+  damage_model?: any;
+  reasons?: string[];
+  missing_data?: string[];
+
   error?: string;
 };
 
