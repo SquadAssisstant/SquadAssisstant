@@ -204,7 +204,10 @@ export function OverlordBondEditor({ selectedUploadId }: { selectedUploadId: num
       return { ...s, tiers: next };
     });
   }
-
+useEffect(() => {
+  void load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedUploadId]);
   return (
     <div className="space-y-4">
       {err ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{err}</div> : null}
