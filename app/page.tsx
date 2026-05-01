@@ -1155,8 +1155,8 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
       setBattleComparison(json?.comparison ?? null);
 setBattleFactorBreakdown(json?.factor_breakdown ?? null);
 setBattleDamageModel(json?.damage_model ?? null);
-setBattleMissingData(Array.isArray(json?.missing_data) ? json?.missing_data : []);
-setBattleReasons(Array.isArray(json?.reasons) ? json?.reasons : []);
+setBattleMissingData(json?.missing_data ?? []);
+setBattleReasons(json?.reasons ?? []);
 
       if (!selectedBattleReportId && analyses[0]) {
         setSelectedBattleReportId(String(analyses[0].id));
@@ -1213,8 +1213,8 @@ setBattleReasons(Array.isArray(json?.reasons) ? json?.reasons : []);
       setBattleComparison(json?.comparison ?? null);
       setBattleFactorBreakdown(json?.factor_breakdown ?? null);
       setBattleDamageModel(json?.damage_model ?? null);
-      setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
-      setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
+      setBattleMissingData(json?.missing_data ?? []);
+setBattleReasons(json?.reasons ?? []);
       return;
     }
 
@@ -1252,8 +1252,8 @@ setBattleReasons(Array.isArray(json?.reasons) ? json?.reasons : []);
     setBattleComparison(json?.comparison ?? null);
     setBattleFactorBreakdown(json?.factor_breakdown ?? null);
     setBattleDamageModel(json?.damage_model ?? null);
-    setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
-    setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
+    setBattleMissingData(json?.missing_data ?? []);
+setBattleReasons(json?.reasons ?? []);
   } catch (e: any) {
     setBattleErr(e?.message ?? "Battle analyzer failed");
   } finally {
