@@ -1227,7 +1227,6 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     battleContextSummary,
     battleCustomBegin,
     battleCustomFinish,
-    battleQuestion,
     battleRange,
     filteredBattleAnalyses,
     selectedBattleReportFileLabel,
