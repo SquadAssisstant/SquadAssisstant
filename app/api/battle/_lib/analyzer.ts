@@ -33,16 +33,30 @@ const emptyMods = (): StatMods => ({
 });
 
 function safeNum(v: any) {
+  if (typeof v === "string") {
+    const cleaned = v.replace(/,/g, "").replace(/%/g, "").trim();
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function fmtNum(v: any) {
+  const n = safeNum(v);
+  if (!n) return "unknown";
+  return Math.round(n).toLocaleString();
 }
 
 function addMods(a: StatMods, b: Partial<StatMods> | undefined | null): StatMods {
   const out = { ...a };
   if (!b) return out;
+
   for (const key of Object.keys(out) as (keyof StatMods)[]) {
     out[key] += safeNum(b[key]);
   }
+
   return out;
 }
 
@@ -115,7 +129,10 @@ function getHeroPrimarySkillMultiplier(hero: any): number {
   const offensive = (Array.isArray(hero?.skills) ? hero.skills : [])
     .filter((s: any) => {
       const kind = String(s?.kind || "").toLowerCase();
-      return (kind === "tactical" || kind === "auto" || kind === "unknown") && safeNum(s?.multiplier_pct) > 0;
+      return (
+        (kind === "tactical" || kind === "auto" || kind === "unknown") &&
+        safeNum(s?.multiplier_pct) > 0
+      );
     })
     .sort((a: any, b: any) => safeNum(b?.multiplier_pct) - safeNum(a?.multiplier_pct));
 
@@ -167,7 +184,10 @@ function getLineupBonusMultiplier(heroes: any[]): number {
 }
 
 function getDamageModifierMultiplier(hero: any, context: any): number {
-  const mods = addMods(addMods(sumSkillMods(hero), context?.drone?.modifiers), context?.overlord?.modifiers);
+  const mods = addMods(
+    addMods(sumSkillMods(hero), context?.drone?.modifiers),
+    context?.overlord?.modifiers
+  );
 
   const positive = mods.damage_pct + mods.skill_damage_pct + mods.crit_pct * 0.35;
   const reductionPenalty = Math.max(0, mods.damage_reduction_pct) * 0.2;
@@ -183,7 +203,8 @@ function scoreHero(hero: any, context?: any) {
   const damageMods = getDamageModifierMultiplier(hero, context);
 
   const offence = stats.atk * skillMult * gearMult * moraleMult * damageMods;
-  const defense = stats.def * gearMult * (1 + safeNum(context?.overlord?.modifiers?.damage_reduction_pct) / 200);
+  const defense =
+    stats.def * gearMult * (1 + safeNum(context?.overlord?.modifiers?.damage_reduction_pct) / 200);
   const sustain = (stats.hp + stats.def * 12) * gearMult;
   const effective_power = stats.power * gearMult * moraleMult;
 
@@ -234,7 +255,13 @@ function buildFactorBreakdown(context: any, likelyCore: any[]) {
       modifiers: droneMods,
     },
     overlord: {
-      ready: !!(context?.overlord?.profile || context?.overlord?.skills || context?.overlord?.promote || context?.overlord?.bond || context?.overlord?.train),
+      ready: !!(
+        context?.overlord?.profile ||
+        context?.overlord?.skills ||
+        context?.overlord?.promote ||
+        context?.overlord?.bond ||
+        context?.overlord?.train
+      ),
       modifiers: overlordMods,
     },
     squads: Array.isArray(context?.squads) ? context.squads : [],
@@ -246,12 +273,15 @@ function buildMissingData(context: any) {
   const heroes = Array.isArray(context?.heroes) ? context.heroes : [];
 
   if (!heroes.length) missing.push("No saved heroes were found.");
+
   if (!context?.drone?.profile && !context?.drone?.components && !context?.drone?.combat_boost && !context?.drone?.boost_chips) {
     missing.push("No saved drone data was found.");
   }
+
   if (!context?.overlord?.profile && !context?.overlord?.skills && !context?.overlord?.promote && !context?.overlord?.bond && !context?.overlord?.train) {
     missing.push("No saved overlord data was found.");
   }
+
   if (!Array.isArray(context?.squads) || !context.squads.length) {
     missing.push("No saved squad assignment facts were found, so likely core heroes are estimated from saved combat value.");
   }
@@ -263,6 +293,259 @@ function buildMissingData(context: any) {
   }
 
   return missing;
+}
+
+function walkValues(input: any, path: string[] = [], out: Array<{ path: string; value: any }> = []) {
+  if (input == null) return out;
+
+  if (typeof input !== "object") {
+    out.push({ path: path.join(".").toLowerCase(), value: input });
+    return out;
+  }
+
+  if (Array.isArray(input)) {
+    input.forEach((item, idx) => walkValues(item, [...path, String(idx)], out));
+    return out;
+  }
+
+  for (const [key, value] of Object.entries(input)) {
+    walkValues(value, [...path, key], out);
+  }
+
+  return out;
+}
+
+function findReportNumber(report: any, include: string[], exclude: string[] = []) {
+  const rows = walkValues(report);
+
+  for (const row of rows) {
+    const p = row.path;
+    const matchesInclude = include.some((term) => p.includes(term));
+    const matchesExclude = exclude.some((term) => p.includes(term));
+
+    if (!matchesInclude || matchesExclude) continue;
+
+    const n = safeNum(row.value);
+    if (n > 0) return n;
+  }
+
+  return 0;
+}
+
+function findReportText(report: any, include: string[]) {
+  const rows = walkValues(report);
+
+  for (const row of rows) {
+    const p = row.path;
+    if (!include.some((term) => p.includes(term))) continue;
+
+    const s = String(row.value ?? "").trim();
+    if (s) return s;
+  }
+
+  return "";
+}
+
+function inferOutcome(report: any) {
+  const text = JSON.stringify(report ?? {}).toLowerCase();
+
+  if (text.includes("victory") || text.includes("win")) return "win";
+  if (text.includes("defeat") || text.includes("loss") || text.includes("lost")) return "loss";
+
+  return "unknown";
+}
+
+function buildYoursVsTheirs(input: {
+  report: any;
+  context: any;
+  likelyCore: any[];
+  factorBreakdown: any;
+  lineupMultiplier: number;
+  moraleMultiplier: number;
+}) {
+  const { report, context, likelyCore, factorBreakdown, lineupMultiplier, moraleMultiplier } = input;
+
+  const yourHeroPower = likelyCore.reduce((sum, h) => sum + safeNum(h.stats?.power), 0);
+  const yourAttack = likelyCore.reduce((sum, h) => sum + safeNum(h.stats?.atk), 0);
+  const yourHp = likelyCore.reduce((sum, h) => sum + safeNum(h.stats?.hp), 0);
+  const yourDefense = likelyCore.reduce((sum, h) => sum + safeNum(h.stats?.def), 0);
+  const yourMarch = likelyCore.reduce((sum, h) => sum + safeNum(h.stats?.march_size), 0);
+  const yourEffectiveValue = likelyCore.reduce((sum, h) => sum + safeNum(h.score?.total), 0);
+
+  const yourGearPower = likelyCore.reduce((sum, h) => {
+    const mods = sumGearMods(h.raw_hero);
+    return sum + mods.power_flat + mods.attack_flat * 4 + mods.defense_flat * 3 + mods.hp_flat * 0.0025;
+  }, 0);
+
+  const yourSkillValue = likelyCore.reduce((sum, h) => {
+    return sum + safeNum(h.skill_multiplier) * 1000;
+  }, 0);
+
+  const droneMods = factorBreakdown?.drone?.modifiers ?? emptyMods();
+  const overlordMods = factorBreakdown?.overlord?.modifiers ?? emptyMods();
+
+  const yourDroneValue =
+    droneMods.power_flat +
+    droneMods.attack_flat * 4 +
+    droneMods.defense_flat * 3 +
+    droneMods.hp_flat * 0.0025 +
+    droneMods.attack_pct * 500 +
+    droneMods.defense_pct * 350 +
+    droneMods.hp_pct * 250 +
+    droneMods.damage_pct * 750 +
+    droneMods.skill_damage_pct * 750;
+
+  const yourOverlordValue =
+    overlordMods.power_flat +
+    overlordMods.attack_flat * 4 +
+    overlordMods.defense_flat * 3 +
+    overlordMods.hp_flat * 0.0025 +
+    overlordMods.attack_pct * 500 +
+    overlordMods.defense_pct * 350 +
+    overlordMods.hp_pct * 250 +
+    overlordMods.damage_pct * 750 +
+    overlordMods.skill_damage_pct * 750;
+
+  const enemyTotalPower =
+    findReportNumber(report, ["enemy", "power"]) ||
+    findReportNumber(report, ["opponent", "power"]) ||
+    findReportNumber(report, ["their", "power"]);
+
+  const yourVisiblePower =
+    findReportNumber(report, ["your", "power"]) ||
+    findReportNumber(report, ["my", "power"]) ||
+    findReportNumber(report, ["attacker", "power"], ["enemy", "opponent", "defender"]) ||
+    yourHeroPower;
+
+  const enemyHeroPower =
+    findReportNumber(report, ["enemy", "hero", "power"]) ||
+    findReportNumber(report, ["opponent", "hero", "power"]);
+
+  const enemyDronePower =
+    findReportNumber(report, ["enemy", "drone"]) ||
+    findReportNumber(report, ["opponent", "drone"]);
+
+  const enemyOverlordPower =
+    findReportNumber(report, ["enemy", "overlord"]) ||
+    findReportNumber(report, ["opponent", "overlord"]);
+
+  const enemyAttack =
+    findReportNumber(report, ["enemy", "attack"]) ||
+    findReportNumber(report, ["opponent", "attack"]) ||
+    0;
+
+  const enemyHp =
+    findReportNumber(report, ["enemy", "hp"]) ||
+    findReportNumber(report, ["opponent", "hp"]) ||
+    0;
+
+  const enemyDefense =
+    findReportNumber(report, ["enemy", "defense"]) ||
+    findReportNumber(report, ["enemy", "def"]) ||
+    findReportNumber(report, ["opponent", "defense"]) ||
+    findReportNumber(report, ["opponent", "def"]) ||
+    0;
+
+  const enemyMarch =
+    findReportNumber(report, ["enemy", "march"]) ||
+    findReportNumber(report, ["opponent", "march"]) ||
+    0;
+
+  const outcome = inferOutcome(report);
+  const visibleEnemyEstimate = enemyTotalPower || enemyHeroPower || enemyAttack + enemyHp * 0.0025 + enemyDefense * 3;
+
+  const advantages: string[] = [];
+  const disadvantages: string[] = [];
+  const outcomeReasons: string[] = [];
+
+  if (yourVisiblePower && enemyTotalPower) {
+    if (yourVisiblePower >= enemyTotalPower) {
+      advantages.push(`Your visible power was higher: ${fmtNum(yourVisiblePower)} vs ${fmtNum(enemyTotalPower)}.`);
+    } else {
+      disadvantages.push(`Enemy visible power was higher: ${fmtNum(enemyTotalPower)} vs your ${fmtNum(yourVisiblePower)}.`);
+    }
+  } else if (enemyTotalPower && !yourVisiblePower) {
+    disadvantages.push(`Enemy visible power was detected at ${fmtNum(enemyTotalPower)}, but your visible report power was not detected.`);
+  } else if (yourVisiblePower && !enemyTotalPower) {
+    advantages.push(`Your saved/visible power was ${fmtNum(yourVisiblePower)}. Enemy total power was not visible, so enemy side is estimated.`);
+  }
+
+  if (yourDroneValue > 0 && !enemyDronePower) {
+    advantages.push("Your saved drone data was available and applied. Enemy drone details were not visible, so enemy drone impact is estimated.");
+  } else if (enemyDronePower && yourDroneValue && enemyDronePower > yourDroneValue) {
+    disadvantages.push(`Enemy drone value appeared higher: ${fmtNum(enemyDronePower)} vs your estimated ${fmtNum(yourDroneValue)}.`);
+  }
+
+  if (yourOverlordValue > 0 && !enemyOverlordPower) {
+    advantages.push("Your saved overlord data was available and applied. Enemy overlord details were not visible, so enemy overlord impact is estimated.");
+  } else if (enemyOverlordPower && yourOverlordValue && enemyOverlordPower > yourOverlordValue) {
+    disadvantages.push(`Enemy overlord value appeared higher: ${fmtNum(enemyOverlordPower)} vs your estimated ${fmtNum(yourOverlordValue)}.`);
+  }
+
+  if (lineupMultiplier > 1) {
+    advantages.push(`Your likely squad received an estimated lineup multiplier of ${lineupMultiplier.toFixed(2)}x.`);
+  }
+
+  if (moraleMultiplier > 1) {
+    advantages.push(`Your saved morale created an estimated morale multiplier of ${moraleMultiplier.toFixed(2)}x.`);
+  }
+
+  if (outcome === "loss") {
+    outcomeReasons.push("The battle report outcome appears to be a loss.");
+    if (disadvantages.length) {
+      outcomeReasons.push("The most likely causes are the listed disadvantages above.");
+    } else {
+      outcomeReasons.push("Enemy hidden bonuses, skill timing, drone/overlord differences, troop losses, or unparsed report stats likely decided the result.");
+    }
+  } else if (outcome === "win") {
+    outcomeReasons.push("The battle report outcome appears to be a win.");
+    if (advantages.length) {
+      outcomeReasons.push("The most likely causes are the listed advantages above.");
+    }
+  } else {
+    outcomeReasons.push("The battle report outcome was not clearly parsed, so the comparison focuses on visible/saved stat advantages.");
+  }
+
+  return {
+    outcome,
+    yours: {
+      visible_power: yourVisiblePower,
+      saved_hero_power: yourHeroPower,
+      attack: yourAttack,
+      hp: yourHp,
+      defense: yourDefense,
+      march_size: yourMarch,
+      gear_value_estimate: yourGearPower,
+      skill_value_estimate: yourSkillValue,
+      drone_value_estimate: yourDroneValue,
+      overlord_value_estimate: yourOverlordValue,
+      lineup_multiplier: lineupMultiplier,
+      morale_multiplier: moraleMultiplier,
+      final_effective_value: yourEffectiveValue,
+      source: "saved player data + parsed report when visible",
+    },
+    theirs: {
+      visible_power: enemyTotalPower,
+      hero_power: enemyHeroPower,
+      attack: enemyAttack,
+      hp: enemyHp,
+      defense: enemyDefense,
+      march_size: enemyMarch,
+      drone_power_or_value: enemyDronePower,
+      overlord_power_or_value: enemyOverlordPower,
+      final_effective_value_estimate: visibleEnemyEstimate,
+      source: enemyTotalPower || enemyHeroPower || enemyAttack || enemyHp || enemyDefense
+        ? "battle report parsed visible fields"
+        : "not visible; estimated from outcome only",
+    },
+    advantages,
+    disadvantages,
+    outcome_reasons: outcomeReasons,
+    visible_notes: [
+      "Your side can use saved hero, gear, skill, drone, overlord, and squad data.",
+      "Enemy side can only use values visible in the battle report. Hidden enemy gear, skills, drone chips, overlord bonuses, buffs, debuffs, and multipliers are marked unknown unless visible.",
+    ],
+  };
 }
 
 export function buildBattleAnalysisFromContext(input: {
@@ -304,18 +587,23 @@ export function buildBattleAnalysisFromContext(input: {
   const factorBreakdown = buildFactorBreakdown(context, likelyCore);
   const missingData = buildMissingData(context);
 
+  const comparison = buildYoursVsTheirs({
+    report,
+    context,
+    likelyCore,
+    factorBreakdown,
+    lineupMultiplier,
+    moraleMultiplier,
+  });
+
   const dominantReasons: string[] = [];
 
-  if (lineupMultiplier > 1) {
-    dominantReasons.push(
-      `Your saved roster indicates a same-type lineup bonus multiplier of ${lineupMultiplier.toFixed(2)}x for the likely core squad.`
-    );
+  if (comparison.disadvantages.length) {
+    dominantReasons.push(...comparison.disadvantages.slice(0, 3));
   }
 
-  if (moraleMultiplier > 1) {
-    dominantReasons.push(
-      `Your saved morale profile suggests an estimated morale damage multiplier of ${moraleMultiplier.toFixed(2)}x.`
-    );
+  if (comparison.advantages.length) {
+    dominantReasons.push(...comparison.advantages.slice(0, 3));
   }
 
   if (factorBreakdown.drone.ready) {
@@ -334,9 +622,21 @@ export function buildBattleAnalysisFromContext(input: {
     .map((h) => `${h.name} (${Math.round(h.score.total).toLocaleString()} value)`)
     .join(", ");
 
+  const yoursVsTheirsLines = [
+    "Yours vs Theirs:",
+    `Outcome detected: ${comparison.outcome}`,
+    `Your visible/saved power: ${fmtNum(comparison.yours.visible_power)}`,
+    `Enemy visible power: ${fmtNum(comparison.theirs.visible_power)}`,
+    `Your final effective value estimate: ${fmtNum(comparison.yours.final_effective_value)}`,
+    `Enemy final effective value estimate: ${fmtNum(comparison.theirs.final_effective_value_estimate)}`,
+    comparison.advantages.length ? `Your advantages: ${comparison.advantages.join(" ")}` : "Your advantages: none clearly detected.",
+    comparison.disadvantages.length ? `Enemy advantages / your disadvantages: ${comparison.disadvantages.join(" ")}` : "Enemy advantages / your disadvantages: none clearly detected.",
+  ];
+
   return {
     summary: [
       "Battle report analyzer loaded saved player data first, then applied combat-math logic.",
+      ...yoursVsTheirsLines,
       ...dominantReasons,
       `Top saved heroes by current combat value: ${topHeroLine || "none saved"}.`,
       missingData.length
@@ -345,17 +645,20 @@ export function buildBattleAnalysisFromContext(input: {
     ],
     context_summary: [
       `Saved heroes loaded: ${heroes.length}`,
-      `Estimated same-type lineup multiplier: ${lineupMultiplier.toFixed(2)}x`,
-      `Estimated morale multiplier: ${moraleMultiplier.toFixed(2)}x`,
+      `Outcome detected: ${comparison.outcome}`,
+      `Your effective value: ${fmtNum(comparison.yours.final_effective_value)}`,
+      `Enemy visible/estimated value: ${fmtNum(comparison.theirs.final_effective_value_estimate)}`,
       `Drone modifiers: ${factorBreakdown.drone.ready ? "included" : "missing"}`,
       `Overlord modifiers: ${factorBreakdown.overlord.ready ? "included" : "missing"}`,
     ].join(" • "),
+    comparison,
     factor_breakdown: factorBreakdown,
     damage_model: {
       likely_core_total_value: likelyCore.reduce((sum, h) => sum + safeNum(h.score.total), 0),
       estimated_lineup_multiplier: lineupMultiplier,
       estimated_morale_multiplier: moraleMultiplier,
       likely_core_heroes: likelyCore,
+      yours_vs_theirs: comparison,
     },
     reasons: dominantReasons,
     missing_data: missingData,
@@ -366,6 +669,7 @@ export function buildBattleAnalysisFromContext(input: {
       estimated_morale_multiplier: moraleMultiplier,
       drone_ready: factorBreakdown.drone.ready,
       overlord_ready: factorBreakdown.overlord.ready,
+      comparison,
     },
   };
 }
@@ -378,4 +682,4 @@ export function analyzeParsedReport(input: {
     battleReport: input.parsedReport,
     context: input.context,
   });
-    }
+        }
