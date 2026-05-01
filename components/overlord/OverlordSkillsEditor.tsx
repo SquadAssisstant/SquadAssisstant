@@ -37,6 +37,85 @@ function blankValue(): OverlordSkillsValue {
   };
 }
 
+function hasOverlordSkillData(skill: OverlordSkill | undefined): boolean {
+  return Boolean(
+    skill?.name ||
+      skill?.level != null ||
+      skill?.max_level != null ||
+      skill?.type ||
+      skill?.category ||
+      skill?.cooldown != null ||
+      skill?.description ||
+      skill?.scaling_detail ||
+      skill?.bonuses?.length ||
+      skill?.locked_bonuses?.length ||
+      skill?.upgrade_progress?.current != null ||
+      skill?.upgrade_progress?.required != null ||
+      skill?.stars != null
+  );
+}
+
+function blankSkill(slot: number): OverlordSkill {
+  return {
+    slot,
+    name: null,
+    level: null,
+    max_level: null,
+    type: null,
+    category: null,
+    cooldown: null,
+    description: null,
+    scaling_detail: null,
+    bonuses: [],
+    locked_bonuses: [],
+    upgrade_progress: null,
+    stars: null,
+  };
+}
+
+function mergeExtractedOverlordSkills(
+  current: OverlordSkillsValue,
+  extracted: OverlordSkillsValue
+): OverlordSkillsValue {
+  const bySlot = new Map<number, OverlordSkill>();
+
+  for (const skill of current.skills ?? []) {
+    bySlot.set(skill.slot, skill);
+  }
+
+  for (const extractedSkill of extracted.skills ?? []) {
+    if (!hasOverlordSkillData(extractedSkill)) continue;
+
+    const slot = extractedSkill.slot ?? bySlot.size + 1;
+    const oldSkill = bySlot.get(slot) ?? blankSkill(slot);
+
+    bySlot.set(slot, {
+      ...oldSkill,
+      slot,
+      name: extractedSkill.name ?? oldSkill.name,
+      level: extractedSkill.level ?? oldSkill.level,
+      max_level: extractedSkill.max_level ?? oldSkill.max_level,
+      type: extractedSkill.type ?? oldSkill.type,
+      category: extractedSkill.category ?? oldSkill.category,
+      cooldown: extractedSkill.cooldown ?? oldSkill.cooldown,
+      description: extractedSkill.description ?? oldSkill.description,
+      scaling_detail: extractedSkill.scaling_detail ?? oldSkill.scaling_detail,
+      bonuses: extractedSkill.bonuses?.length ? extractedSkill.bonuses : oldSkill.bonuses ?? [],
+      locked_bonuses: extractedSkill.locked_bonuses?.length
+        ? extractedSkill.locked_bonuses
+        : oldSkill.locked_bonuses ?? [],
+      upgrade_progress: extractedSkill.upgrade_progress ?? oldSkill.upgrade_progress,
+      stars: extractedSkill.stars ?? oldSkill.stars,
+    });
+  }
+
+  return {
+    ...current,
+    selected_slot: extracted.selected_slot ?? current.selected_slot,
+    source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+    skills: Array.from(bySlot.values()).sort((a, b) => a.slot - b.slot),
+  };
+}
 async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
   const text = await res.text().catch(() => "");
   if (!text) return { json: null, text: null };
@@ -119,7 +198,9 @@ export function OverlordSkillsEditor({ selectedUploadId }: { selectedUploadId: n
         return;
       }
 
-      setValue(extracted as OverlordSkillsValue);
+      setValue((current) =>
+  mergeExtractedOverlordSkills(current, extracted as OverlordSkillsValue)
+);
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
