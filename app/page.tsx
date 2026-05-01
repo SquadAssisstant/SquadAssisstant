@@ -1268,7 +1268,6 @@ setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
   selectedBattleReportFileLabel,
   selectedBattleReportFileId,
 ]);
-  ]);
 
   const runOptimizer = useCallback(async () => {
     setOptimizerBusy(true);
