@@ -233,7 +233,9 @@ export function DroneBoostChipsEditor({
         return;
       }
 
-      setValue(extracted as BoostChipsValue);
+      setValue((current) =>
+  mergeExtractedBoostChips(current, extracted as BoostChipsValue)
+);
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
