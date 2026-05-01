@@ -53,6 +53,24 @@ export function MainChat({
     },
   ]);
 
+  useEffect(() => {
+  if (!injectedMessage?.trim()) return;
+
+  setMessages((prev) => [
+    ...prev,
+    {
+      id: `transfer-${Date.now()}`,
+      role: "user",
+      text: injectedMessage,
+    },
+  ]);
+
+  setInput(
+    "Break down this battle analysis in plain English. Explain how the saved hero stats, gear, skills, drone data, overlord data, boosts, buffs, debuffs, multipliers, power, HP, defense, attack, and march size affected the result."
+  );
+
+  onInjectedMessageConsumed?.();
+}, [injectedMessage, onInjectedMessageConsumed]);
   const [input, setInput] = useState("");
   const [attachmentLinks, setAttachmentLinks] = useState("");
   const [uploadIds, setUploadIds] = useState("");
