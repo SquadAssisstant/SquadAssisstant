@@ -2257,6 +2257,27 @@ className={`overflow-hidden rounded-xl border ${
                   <div className="text-xs uppercase tracking-[0.25em] text-white/45">Detailed Analysis</div>
                   <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">
                     {battleAnswer || "No detailed analysis yet."}
+                    <button
+  type="button"
+  disabled={!battleSummary && !battleAnswer}
+  onClick={() => {
+    const payload = {
+      summary: battleSummary,
+      analysis: battleAnswer,
+      context_summary: battleContextSummary,
+      analyses: battleAnalyses,
+    };
+
+    setMainChatTransfer(
+      `Battle Analyzer Handoff:\n\n${JSON.stringify(payload, null, 2)}`
+    );
+
+    setBattleOpen(false);
+  }}
+  className="mt-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 disabled:opacity-40"
+>
+  Transfer to Main Chat
+</button>
                   </pre>
                 </div>
               </div>
