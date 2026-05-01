@@ -1163,8 +1163,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
           credentials: "include",
           body: JSON.stringify({
             message:
-              battleQuestion ||
-              `Explain this report${selectedBattleReportFileLabel ? ` for battle file "${selectedBattleReportFileLabel}"` : ""}.`,
+  "Generate a simple battle report summary and include the full deterministic breakdown payload for Main Chat handoff.",
             detail: true,
           }),
         });
