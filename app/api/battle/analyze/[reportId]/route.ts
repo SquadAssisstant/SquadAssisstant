@@ -68,14 +68,21 @@ export async function POST(req: Request, context: any) {
     ].join("\n");
 
     return NextResponse.json({
-      ok: true,
-      mode: "individual",
-      reportId,
-      context: analysis?.context ?? contextData,
-      context_summary: analysis?.context_summary ?? contextSummary,
-      summary: summaryText,
-      answer,
-    });
+  ok: true,
+  mode: "individual",
+  reportId,
+
+  context: analysis?.context ?? contextData,
+  context_summary: analysis?.context_summary ?? contextSummary,
+  summary: summaryText,
+  answer,
+
+  comparison: analysis?.comparison ?? null,
+  factor_breakdown: analysis?.factor_breakdown ?? null,
+  damage_model: analysis?.damage_model ?? null,
+  reasons: analysis?.reasons ?? [],
+  missing_data: analysis?.missing_data ?? [],
+});
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message ?? "Battle analysis failed" },
