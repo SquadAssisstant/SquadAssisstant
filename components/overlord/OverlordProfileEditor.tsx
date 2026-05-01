@@ -127,7 +127,25 @@ export function OverlordProfileEditor({ selectedUploadId }: { selectedUploadId: 
         return;
       }
 
-      setValue(extracted as OverlordProfileValue);
+      setValue((current) => ({
+  ...current,
+  ...extracted,
+  name: extracted.name ?? current.name,
+  role: extracted.role ?? current.role,
+  tier_badge: extracted.tier_badge ?? current.tier_badge,
+  level: extracted.level ?? current.level,
+  power: extracted.power ?? current.power,
+  stats: {
+    attack: extracted.stats?.attack ?? current.stats.attack,
+    hp: extracted.stats?.hp ?? current.stats.hp,
+    defense: extracted.stats?.defense ?? current.stats.defense,
+    march_size: extracted.stats?.march_size ?? current.stats.march_size,
+  },
+  skill_preview: extracted.skill_preview?.length
+    ? extracted.skill_preview
+    : current.skill_preview,
+  source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+}));
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
