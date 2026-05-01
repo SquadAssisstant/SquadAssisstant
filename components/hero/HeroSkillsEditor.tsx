@@ -24,6 +24,52 @@ function blankValue(): HeroSkillsValue {
   };
 }
 
+function hasSkillData(skill: HeroSkill | undefined): boolean {
+  return Boolean(
+    skill?.name ||
+      skill?.level != null ||
+      skill?.summary ||
+      skill?.scaling_detail
+  );
+}
+
+function mergeExtractedHeroSkills(
+  current: HeroSkillsValue,
+  extracted: HeroSkillsValue
+): HeroSkillsValue {
+  const bySlot = new Map<number, HeroSkill>();
+
+  for (const skill of current.skills) {
+    bySlot.set(skill.slot, skill);
+  }
+
+  for (const extractedSkill of extracted.skills ?? []) {
+    if (!hasSkillData(extractedSkill)) continue;
+
+    const oldSkill = bySlot.get(extractedSkill.slot) ?? {
+      slot: extractedSkill.slot,
+      name: null,
+      level: null,
+      summary: null,
+      scaling_detail: null,
+    };
+
+    bySlot.set(extractedSkill.slot, {
+      ...oldSkill,
+      name: extractedSkill.name ?? oldSkill.name,
+      level: extractedSkill.level ?? oldSkill.level,
+      summary: extractedSkill.summary ?? oldSkill.summary,
+      scaling_detail:
+        extractedSkill.scaling_detail ?? oldSkill.scaling_detail,
+    });
+  }
+
+  return {
+    ...current,
+    source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+    skills: Array.from(bySlot.values()).sort((a, b) => a.slot - b.slot),
+  };
+}
 async function safeReadResponse(res: Response): Promise<{ json: any | null; text: string | null }> {
   const text = await res.text().catch(() => "");
   if (!text) return { json: null, text: null };
@@ -111,7 +157,9 @@ export function HeroSkillsEditor({ selectedUploadId }: { selectedUploadId: numbe
         return;
       }
 
-      setValue(extracted as HeroSkillsValue);
+      setValue((current) =>
+  mergeExtractedHeroSkills(current, extracted as HeroSkillsValue)
+);
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
