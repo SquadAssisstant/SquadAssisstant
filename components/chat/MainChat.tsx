@@ -37,7 +37,13 @@ async function readFilesAsDataUrls(files: FileList | null): Promise<{ dataUrls: 
   };
 }
 
-export function MainChat() {
+export function MainChat({
+  injectedMessage,
+  onInjectedMessageConsumed,
+}: {
+  injectedMessage?: string | null;
+  onInjectedMessageConsumed?: () => void;
+}) {
   const [messages, setMessages] = useState<MainChatMessage[]>([
     {
       id: "welcome",
