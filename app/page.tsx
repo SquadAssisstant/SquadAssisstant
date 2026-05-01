@@ -89,6 +89,13 @@ type BattleAnalyzeGetResponse = {
   context_summary?: string;
   context?: any;
   analyses?: BattleAnalysisRow[];
+
+  comparison?: any;
+  factor_breakdown?: any;
+  damage_model?: any;
+  reasons?: string[];
+  missing_data?: string[];
+
   error?: string;
 };
 
@@ -99,6 +106,13 @@ type BattleAnalyzePostResponse = {
   context?: any;
   answer?: string;
   mode?: string;
+
+  comparison?: any;
+  factor_breakdown?: any;
+  damage_model?: any;
+  reasons?: string[];
+  missing_data?: string[];
+
   error?: string;
 };
 
@@ -589,7 +603,12 @@ export default function Page() {
   const [battleAnswer, setBattleAnswer] = useState<string>("");
   const [mainChatTransfer, setMainChatTransfer] = useState<string | null>(null);
   const [battleContextSummary, setBattleContextSummary] = useState<string>("");
-  const [battleAnalyses, setBattleAnalyses] = useState<BattleAnalysisRow[]>([]);
+const [battleComparison, setBattleComparison] = useState<any>(null);
+const [battleFactorBreakdown, setBattleFactorBreakdown] = useState<any>(null);
+const [battleDamageModel, setBattleDamageModel] = useState<any>(null);
+const [battleMissingData, setBattleMissingData] = useState<string[]>([]);
+const [battleReasons, setBattleReasons] = useState<string[]>([]);
+const [battleAnalyses, setBattleAnalyses] = useState<BattleAnalysisRow[]>([]);
   const [selectedBattleReportId, setSelectedBattleReportId] = useState<string>("");
 
   const [battleReports, setBattleReports] = useState<BattleReport[]>([]);
@@ -1133,6 +1152,11 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
       setBattleContextSummary(json?.context_summary ?? "");
       setBattleSummary(json?.summary ?? "");
       setBattleAnswer("");
+      setBattleComparison(json?.comparison ?? null);
+setBattleFactorBreakdown(json?.factor_breakdown ?? null);
+setBattleDamageModel(json?.damage_model ?? null);
+setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
+setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
 
       if (!selectedBattleReportId && analyses[0]) {
         setSelectedBattleReportId(String(analyses[0].id));
@@ -1184,9 +1208,13 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
           )
         );
         setBattleAnswer(json?.answer ?? "");
-        setBattleContextSummary(json?.context_summary ?? battleContextSummary);
-        return;
-      }
+setBattleContextSummary(json?.context_summary ?? battleContextSummary);
+setBattleComparison(json?.comparison ?? null);
+setBattleFactorBreakdown(json?.factor_breakdown ?? null);
+setBattleDamageModel(json?.damage_model ?? null);
+setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
+setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
+return;
 
       const res = await fetch("/api/battle/analyze", {
         method: "POST",
@@ -1217,7 +1245,12 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
         )
       );
       setBattleAnswer(json?.answer ?? "");
-      setBattleContextSummary(json?.context_summary ?? battleContextSummary);
+setBattleContextSummary(json?.context_summary ?? battleContextSummary);
+setBattleComparison(json?.comparison ?? null);
+setBattleFactorBreakdown(json?.factor_breakdown ?? null);
+setBattleDamageModel(json?.damage_model ?? null);
+setBattleMissingData(Array.isArray(json?.missing_data) ? json.missing_data : []);
+setBattleReasons(Array.isArray(json?.reasons) ? json.reasons : []);
     } catch (e: any) {
       setBattleErr(e?.message ?? "Battle analyzer failed");
     } finally {
@@ -2235,9 +2268,58 @@ className={`overflow-hidden rounded-xl border ${
             <SectionCard title="Analysis Output" subtitle={battleContextSummary || "Run the analyzer to load current context"}>
               <div className="space-y-4">
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-xs uppercase tracking-[0.25em] text-white/45">Summary</div>
-                  <pre className="mt-3 whitespace-pre-wrap text-sm text-white/80">{battleSummary || "No summary yet."}</pre>
-                </div>
+  <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+    Yours vs Theirs
+  </div>
+
+  {battleComparison ? (
+    <div className="mt-3 grid gap-3 text-sm text-white/75 md:grid-cols-2">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="font-semibold text-white">Yours</div>
+        <div className="mt-2">Power: {battleComparison?.yours?.visible_power?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Hero Power: {battleComparison?.yours?.saved_hero_power?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Attack: {battleComparison?.yours?.attack?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>HP: {battleComparison?.yours?.hp?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Defense: {battleComparison?.yours?.defense?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>March Size: {battleComparison?.yours?.march_size?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Final Effective Value: {battleComparison?.yours?.final_effective_value?.toLocaleString?.() ?? "Unknown"}</div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="font-semibold text-white">Theirs</div>
+        <div>Power: {battleComparison?.theirs?.visible_power?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Hero Power: {battleComparison?.theirs?.hero_power?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Attack: {battleComparison?.theirs?.attack?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>HP: {battleComparison?.theirs?.hp?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Defense: {battleComparison?.theirs?.defense?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>March Size: {battleComparison?.theirs?.march_size?.toLocaleString?.() ?? "Unknown"}</div>
+        <div>Final Effective Estimate: {battleComparison?.theirs?.final_effective_value_estimate?.toLocaleString?.() ?? "Unknown"}</div>
+      </div>
+
+      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 md:col-span-2">
+        <div className="font-semibold text-emerald-100">Your Advantages</div>
+        <pre className="mt-2 whitespace-pre-wrap text-sm text-emerald-100/80">
+          {(battleComparison?.advantages?.length
+            ? battleComparison.advantages
+            : ["None clearly detected."]).join("\n")}
+        </pre>
+      </div>
+
+      <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-3 md:col-span-2">
+        <div className="font-semibold text-red-100">Enemy Advantages / Your Disadvantages</div>
+        <pre className="mt-2 whitespace-pre-wrap text-sm text-red-100/80">
+          {(battleComparison?.disadvantages?.length
+            ? battleComparison.disadvantages
+            : ["None clearly detected."]).join("\n")}
+        </pre>
+      </div>
+    </div>
+  ) : (
+    <div className="mt-3 text-sm text-white/50">
+      Run the analyzer to generate yours-vs-theirs comparison.
+    </div>
+  )}
+</div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div className="text-xs uppercase tracking-[0.25em] text-white/45">Detailed Analysis</div>
@@ -2255,11 +2337,16 @@ className={`overflow-hidden rounded-xl border ${
     disabled={!battleSummary && !battleAnswer}
     onClick={() => {
       const payload = {
-        summary: battleSummary,
-        analysis: battleAnswer,
-        context_summary: battleContextSummary,
-        analyses: battleAnalyses,
-      };
+  summary: battleSummary,
+  analysis: battleAnswer,
+  context_summary: battleContextSummary,
+  comparison: battleComparison,
+  factor_breakdown: battleFactorBreakdown,
+  damage_model: battleDamageModel,
+  reasons: battleReasons,
+  missing_data: battleMissingData,
+  analyses: battleAnalyses,
+};
 
       setMainChatTransfer(
         `Battle Analyzer Handoff:\n\n${JSON.stringify(payload, null, 2)}`
