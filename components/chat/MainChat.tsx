@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatMessage, type MainChatMessage } from "@/components/chat/ChatMessage";
 
