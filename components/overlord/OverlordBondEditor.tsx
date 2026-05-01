@@ -140,7 +140,19 @@ export function OverlordBondEditor({ selectedUploadId }: { selectedUploadId: num
         return;
       }
 
-      setValue(extracted as BondValue);
+      setValue((current) => ({
+  ...current,
+  ...extracted,
+  current_title: extracted.current_title ?? current.current_title,
+  current_rank: extracted.current_rank ?? current.current_rank,
+  next_rank: extracted.next_rank ?? current.next_rank,
+  tiers: extracted.tiers?.length ? extracted.tiers : current.tiers,
+  squad_bonus: extracted.squad_bonus ?? current.squad_bonus,
+  overlord_bonus: extracted.overlord_bonus ?? current.overlord_bonus,
+  cost: extracted.cost ?? current.cost,
+  requirement_note: extracted.requirement_note ?? current.requirement_note,
+  source_upload_id: extracted.source_upload_id ?? current.source_upload_id,
+}));
       setMsg("Extracted ✅ (review fields, then Save)");
     } catch (e: any) {
       setErr(`Extract failed: ${e?.message ?? "unknown"}`);
