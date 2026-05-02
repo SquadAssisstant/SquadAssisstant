@@ -1390,66 +1390,79 @@ setBattleReasons(json?.reasons ?? []);
   }, [optimizerResult, loadOptimizerSavedFiles]);
 
   const submitUploads = useCallback(async () => {
-    if (!uploadFiles.length) {
-      setUploadErr("Choose at least one screenshot first.");
-      return;
+  if (!uploadFiles.length) {
+    setUploadErr("Choose at least one screenshot first.");
+    return;
+  }
+
+  setUploadBusy(true);
+  setUploadErr(null);
+  setUploadMsg(null);
+
+  try {
+    const apiKind = normalizeUploadKindForApi(uploadKind);
+
+    // 🔴 THIS is the important line — must be here
+    let activeBattleReportId: string | null = null;
+
+    for (const file of uploadFiles) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("kind", apiKind);
+
+      // If we already created a report, attach it
+      if (apiKind === "battle_report" && activeBattleReportId) {
+        form.append("report_id", activeBattleReportId);
+      }
+
+      const res = await fetch("/api/uploads/image", {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+
+      const payload = await safeJson<any>(res);
+
+      if (!res.ok) {
+        throw new Error(payload?.error ?? `Upload failed (${res.status})`);
+      }
+
+      // 🔴 This captures the FIRST created report ID
+      if (apiKind === "battle_report" && payload?.report_id && !activeBattleReportId) {
+        activeBattleReportId = String(payload.report_id);
+      }
     }
 
-    setUploadBusy(true);
-    setUploadErr(null);
-    setUploadMsg(null);
+    let extraMsg = "";
 
-    try {
-      const apiKind = normalizeUploadKindForApi(uploadKind);
-
-      for (const file of uploadFiles) {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("kind", apiKind);
-
-        const res = await fetch("/api/uploads/image", {
-          method: "POST",
-          credentials: "include",
-          body: form,
-        });
-
-        const payload = await safeJson<any>(res);
-        if (!res.ok) {
-          throw new Error(payload?.error ?? `Upload failed (${res.status})`);
-        }
-        if (apiKind === "battle_report" && payload?.report_id && !activeBattleReportId) {
-  activeBattleReportId = String(payload.report_id);
-        }
-      }
-
-      let extraMsg = "";
-
-if (isBattleUploadKind(uploadKind)) {
-  extraMsg = " Battle report file saved.";
-}
-      setUploadMsg(`Uploaded ${uploadFiles.length} screenshot${uploadFiles.length === 1 ? "" : "s"} ✅${extraMsg}`);
-      setUploadFiles([]);
-
-      if (apiKind === "hero_profile" || apiKind === "hero_skills" || apiKind === "gear") {
-        await loadHeroUploads();
-        await loadHeroesRoster();
-      }
-      if (apiKind === "drone") {
-        await loadDroneUploads();
-      }
-      if (apiKind === "overlord") {
-        await loadOverlordUploads();
-      }
-      if (apiKind === "battle_report") {
-  await loadBattleUploads();
-  await loadBattleReports();
-  await loadBattleAnalyzerData();
-      }
-    } catch (e: any) {
-      setUploadErr(e?.message ?? "Upload failed");
-    } finally {
-      setUploadBusy(false);
+    if (isBattleUploadKind(uploadKind)) {
+      extraMsg = " Battle report file saved.";
     }
+
+    setUploadMsg(
+      `Uploaded ${uploadFiles.length} screenshot${uploadFiles.length === 1 ? "" : "s"} ✔️${extraMsg}`
+    );
+
+    setUploadFiles([]);
+
+    if (apiKind === "hero_profile" || apiKind === "hero_skills" || apiKind === "gear") {
+      await loadHeroUploads();
+      await loadHeroesRoster();
+    }
+
+    if (apiKind === "drone") {
+      await loadDroneUploads();
+    }
+
+    if (apiKind === "battle_report") {
+      await loadBattleReports();
+    }
+  } catch (e: any) {
+    setUploadErr(e?.message ?? "Upload failed");
+  } finally {
+    setUploadBusy(false);
+  }
+}, [uploadFiles, uploadKind]);
   }, [
     loadBattleAnalyzerData,
     loadBattleReports,
