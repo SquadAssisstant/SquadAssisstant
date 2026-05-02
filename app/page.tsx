@@ -1463,18 +1463,7 @@ setBattleReasons(json?.reasons ?? []);
     setUploadBusy(false);
   }
 }, [uploadFiles, uploadKind]);
-  }, [
-    loadBattleAnalyzerData,
-    loadBattleReports,
-    loadBattleUploads,
-    loadDroneUploads,
-    loadHeroUploads,
-    loadHeroesRoster,
-    loadOverlordUploads,
-    uploadFiles,
-    uploadKind,
-  ]);
-
+  
   useEffect(() => {
     void loadHeroUploads();
     void loadDroneUploads();
