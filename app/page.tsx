@@ -1417,6 +1417,9 @@ setBattleReasons(json?.reasons ?? []);
         if (!res.ok) {
           throw new Error(payload?.error ?? `Upload failed (${res.status})`);
         }
+        if (apiKind === "battle_report" && payload?.report_id && !activeBattleReportId) {
+  activeBattleReportId = String(payload.report_id);
+        }
       }
 
       let extraMsg = "";
