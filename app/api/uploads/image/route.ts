@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sessionCookieName, verifySession } from "@/lib/session";
+import {
+  extractBattleReportPage,
+  mergeBattleReportPageIntoParsed,
+} from "@/app/api/battle/_lib/extractReport";
 
 function getCookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
