@@ -213,24 +213,26 @@ export async function POST(req: Request) {
 
     battleReportPageId = pageInsert.data.id;
 
-    try {
-  const extractedPage = await extractBattleReportPage({
-    imageBuffer: buf,
-    mimeType: file.type,
-    pageIndex,
-  });
+    if (battleReportId && battleReportPageId) {
+  try {
+    const extractedPage = await extractBattleReportPage({
+      imageBuffer: buf,
+      mimeType: file.type,
+      pageIndex,
+    });
 
-  await mergeBattleReportPageIntoParsed({
-    supabase: sb,
-    profileId: s.profileId,
-    reportId: battleReportId,
-    pageId: battleReportPageId,
-    pageIndex,
-    extractedPage,
-  });
-} catch (e: any) {
-  console.error("Battle report extraction failed", e);
-    }
+    await mergeBattleReportPageIntoParsed({
+      supabase: sb,
+      profileId: s.profileId,
+      reportId: battleReportId,
+      pageId: battleReportPageId,
+      pageIndex,
+      extractedPage,
+    });
+  } catch (e: any) {
+    console.error("Battle report extraction failed", e);
+  }
+    
   }
   
       return NextResponse.json({
