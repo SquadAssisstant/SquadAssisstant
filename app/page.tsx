@@ -827,6 +827,57 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
   const loadBattleReportDetail = useCallback(
   async (reportId: string) => {
+    const saveBattleReportSide = useCallback(
+  async (side: "left" | "right") => {
+    if (!selectedBattleReportFileId) return;
+
+    setBattleSideSaving(true);
+    setBattleSideMsg(null);
+    setBattleErr(null);
+
+    try {
+      const res = await fetch("/api/battle/reports/side", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          report_id: selectedBattleReportFileId,
+          user_side: side,
+        }),
+      });
+
+      const json = await safeJson<any>(res);
+
+      if (!res.ok || !json?.ok) {
+        setBattleErr(json?.error ?? `Failed to save side (${res.status})`);
+        return;
+      }
+
+      setBattleSideMsg(
+        side === "left" ? "Left side is yours" : "Right side is yours"
+      );
+
+      setSelectedBattleReportFile((current) =>
+        current
+          ? {
+              ...current,
+              parsed: {
+                ...(current.parsed ?? {}),
+                user_side: side,
+              },
+            }
+          : current
+      );
+
+      await loadBattleReports();
+    } catch (e: any) {
+      setBattleErr(e?.message ?? "Failed to save side");
+    } finally {
+      setBattleSideSaving(false);
+    }
+  },
+  [loadBattleReports, selectedBattleReportFileId]
+);
     if (!reportId) {
       setSelectedBattleReportFile(null);
       return;
