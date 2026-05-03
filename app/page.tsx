@@ -2273,7 +2273,48 @@ className={`overflow-hidden rounded-xl border ${
         </option>
       ))}
     </select>
+</div>
+
+{/* ✅ PASTE HERE */}
+{selectedBattleReportFile ? (
+  <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+      Pick Your Side
+    </div>
+
+    <div className="mt-2 text-sm text-white/60">
+      Choose which side is yours.
+    </div>
+
+    <div className="mt-4 flex gap-2">
+      <button
+        onClick={() => void saveBattleReportSide("left")}
+        className={`rounded-2xl px-4 py-2 text-sm ${
+          selectedBattleReportFile?.parsed?.user_side === "left"
+            ? "bg-emerald-500/20 text-emerald-100"
+            : "bg-white/5 text-white/80"
+        }`}
+      >
+        Left side is me
+      </button>
+
+      <button
+        onClick={() => void saveBattleReportSide("right")}
+        className={`rounded-2xl px-4 py-2 text-sm ${
+          selectedBattleReportFile?.parsed?.user_side === "right"
+            ? "bg-emerald-500/20 text-emerald-100"
+            : "bg-white/5 text-white/80"
+        }`}
+      >
+        Right side is me
+      </button>
+    </div>
+
+    {battleSideMsg && (
+      <div className="mt-2 text-sm text-emerald-100">{battleSideMsg}</div>
+    )}
   </div>
+) : null}
 ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">
