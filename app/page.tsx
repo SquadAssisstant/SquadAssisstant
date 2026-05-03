@@ -120,11 +120,13 @@ type BattleReportPage = {
   id: string;
   storage_path: string;
   page_index: number;
+  url?: string | null;
 };
 
 type BattleReport = {
   id: string;
   created_at: string;
+  parsed?: any;
   battle_report_pages: BattleReportPage[];
 };
 
@@ -616,6 +618,8 @@ const [battleAnalyses, setBattleAnalyses] = useState<BattleAnalysisRow[]>([]);
 const [loadingBattleReports, setLoadingBattleReports] = useState(false);
 const [selectedBattleReportFileId, setSelectedBattleReportFileId] = useState<string>("");
 const [selectedBattleReportFile, setSelectedBattleReportFile] = useState<BattleReport | null>(null);
+  const [battleSideSaving, setBattleSideSaving] = useState(false);
+const [battleSideMsg, setBattleSideMsg] = useState<string | null>(null);
 const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(null);
   const selectedBattleReportFileLabel = selectedBattleReportFile
   ? `Report #${selectedBattleReportFile.id.slice(0, 8)}`
