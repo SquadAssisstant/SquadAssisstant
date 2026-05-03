@@ -593,6 +593,7 @@ export default function Page() {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
 
   const [battleRange, setBattleRange] = useState<BattleRange>("Individual");
   const [battleCustomBegin, setBattleCustomBegin] = useState("");
