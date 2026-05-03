@@ -2275,7 +2275,6 @@ className={`overflow-hidden rounded-xl border ${
     </select>
 </div>
 
-{/* ✅ PASTE HERE */}
 {selectedBattleReportFile ? (
   <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
     <div className="text-xs uppercase tracking-[0.25em] text-white/45">
