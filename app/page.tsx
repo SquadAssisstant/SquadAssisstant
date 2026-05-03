@@ -2260,7 +2260,10 @@ className={`overflow-hidden rounded-xl border ${
 
             {battleRange === "Individual" ? (
   <div className="mt-4">
-    <div className="text-xs uppercase tracking-[0.25em] text-white/45">Saved Report File</div>
+    <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+      Saved Report File
+    </div>
+
     <select
       value={selectedBattleReportFileId}
       onChange={(e) => setSelectedBattleReportFileId(e.target.value)}
@@ -2269,50 +2272,57 @@ className={`overflow-hidden rounded-xl border ${
       <option value="">— Select report file —</option>
       {battleReports.map((report) => (
         <option key={report.id} value={String(report.id)}>
-          Report #{report.id.slice(0, 8)} • {report.battle_report_pages?.length ?? 0} page{(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} • {fmtDate(report.created_at)}
+          Report #{report.id.slice(0, 8)} •{" "}
+          {report.battle_report_pages?.length ?? 0} page
+          {(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} •{" "}
+          {fmtDate(report.created_at)}
         </option>
       ))}
     </select>
 
-{selectedBattleReportFile ? (
-  <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-    <div className="text-xs uppercase tracking-[0.25em] text-white/45">
-      Pick Your Side
-    </div>
+    {selectedBattleReportFile ? (
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+          Pick Your Side
+        </div>
 
-    <div className="mt-2 text-sm text-white/60">
-      Choose which side is yours.
-    </div>
+        <div className="mt-2 text-sm text-white/60">
+          Choose which side is yours.
+        </div>
 
-    <div className="mt-4 flex gap-2">
-      <button
-        onClick={() => void saveBattleReportSide("left")}
-        className={`rounded-2xl px-4 py-2 text-sm ${
-          selectedBattleReportFile?.parsed?.user_side === "left"
-            ? "bg-emerald-500/20 text-emerald-100"
-            : "bg-white/5 text-white/80"
-        }`}
-      >
-        Left side is me
-      </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void saveBattleReportSide("left")}
+            className={`rounded-2xl px-4 py-2 text-sm ${
+              selectedBattleReportFile?.parsed?.user_side === "left"
+                ? "bg-emerald-500/20 text-emerald-100"
+                : "bg-white/5 text-white/80"
+            }`}
+          >
+            Left side is me
+          </button>
 
-      <button
-        onClick={() => void saveBattleReportSide("right")}
-        className={`rounded-2xl px-4 py-2 text-sm ${
-          selectedBattleReportFile?.parsed?.user_side === "right"
-            ? "bg-emerald-500/20 text-emerald-100"
-            : "bg-white/5 text-white/80"
-        }`}
-      >
-        Right side is me
-      </button>
-    </div>
+          <button
+            type="button"
+            onClick={() => void saveBattleReportSide("right")}
+            className={`rounded-2xl px-4 py-2 text-sm ${
+              selectedBattleReportFile?.parsed?.user_side === "right"
+                ? "bg-emerald-500/20 text-emerald-100"
+                : "bg-white/5 text-white/80"
+            }`}
+          >
+            Right side is me
+          </button>
+        </div>
 
-    {battleSideMsg && (
-      <div className="mt-2 text-sm text-emerald-100">{battleSideMsg}</div>
-    )}
-  
-) : null}
+        {battleSideMsg ? (
+          <div className="mt-2 text-sm text-emerald-100">
+            {battleSideMsg}
+          </div>
+        ) : null}
+      </div>
+    ) : null}
   </div>
 ) : null}
 
