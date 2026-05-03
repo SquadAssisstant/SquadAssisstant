@@ -827,7 +827,20 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
   const loadBattleReportDetail = useCallback(
   async (reportId: string) => {
-    const saveBattleReportSide = useCallback(
+    if (!reportId) {
+      setSelectedBattleReportFile(null);
+      return;
+    }
+
+    const found =
+      battleReports.find((report) => String(report.id) === String(reportId)) ?? null;
+
+    setSelectedBattleReportFile(found);
+  },
+  [battleReports]
+);
+
+const saveBattleReportSide = useCallback(
   async (side: "left" | "right") => {
     if (!selectedBattleReportFileId) return;
 
@@ -878,19 +891,7 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
   },
   [loadBattleReports, selectedBattleReportFileId]
 );
-    if (!reportId) {
-      setSelectedBattleReportFile(null);
-      return;
-    }
-
-    const found =
-      battleReports.find((report) => String(report.id) === String(reportId)) ?? null;
-
-    setSelectedBattleReportFile(found);
-  },
-  [battleReports]
-);
-    const loadHeroesRoster = useCallback(async () => {
+  const loadHeroesRoster = useCallback(async () => {
     setLoadingHeroesRoster(true);
     setHeroesRosterErr(null);
 
