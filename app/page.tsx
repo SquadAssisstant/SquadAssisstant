@@ -2273,7 +2273,6 @@ className={`overflow-hidden rounded-xl border ${
         </option>
       ))}
     </select>
-</div>
 
 {selectedBattleReportFile ? (
   <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -2312,8 +2311,9 @@ className={`overflow-hidden rounded-xl border ${
     {battleSideMsg && (
       <div className="mt-2 text-sm text-emerald-100">{battleSideMsg}</div>
     )}
-  </div>
+  
 ) : null}
+  </div>
 ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">
