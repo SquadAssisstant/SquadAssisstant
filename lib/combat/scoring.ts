@@ -1,5 +1,5 @@
 import { COMBAT_MATH_SPEC, getLineupBonusMultiplier, getMoraleMultiplier } from "@/lib/combat/mathSpec";
-import { CombatStats, HeroRosterEntry, OptimizerMode, TroopType } from "@/lib/combat/types";
+import { CombatModifiers, CombatStats, HeroRosterEntry, OptimizerMode, TroopType } from "@/lib/combat/types";
 
 function sum(nums: number[]) {
   return nums.reduce((a, b) => a + b, 0);
@@ -8,6 +8,38 @@ function sum(nums: number[]) {
 function safeNum(v: any) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function emptyMods(): Required<CombatModifiers> {
+  return {
+    attack_flat: 0,
+    attack_pct: 0,
+    hp_flat: 0,
+    hp_pct: 0,
+    defense_flat: 0,
+    defense_pct: 0,
+    power_flat: 0,
+    power_pct: 0,
+    damage_pct: 0,
+    damage_reduction_pct: 0,
+    march_flat: 0,
+    march_pct: 0,
+    skill_damage_pct: 0,
+    crit_pct: 0,
+  };
+}
+
+function applyMods(stats: CombatStats, mods?: CombatModifiers): CombatStats {
+  const m = { ...emptyMods(), ...(mods ?? {}) };
+
+  return {
+    hp: stats.hp * (1 + m.hp_pct / 100) + m.hp_flat,
+    atk: stats.atk * (1 + m.attack_pct / 100) + m.attack_flat,
+    def: stats.def * (1 + m.defense_pct / 100) + m.defense_flat,
+    power: stats.power * (1 + m.power_pct / 100) + m.power_flat,
+    morale: stats.morale,
+    march_size: stats.march_size * (1 + m.march_pct / 100) + m.march_flat,
+  };
 }
 
 export function getHeroPrimarySkillMultiplier(hero: HeroRosterEntry): number {
@@ -72,15 +104,19 @@ export function getBestTypeLineupMultiplier(heroes: HeroRosterEntry[]) {
   return getLineupBonusMultiplier(best);
 }
 
-export function scoreHero(hero: HeroRosterEntry) {
-  const stats = getHeroCombatStats(hero);
+export function scoreHero(hero: HeroRosterEntry, modifiers?: CombatModifiers) {
+  const stats = applyMods(getHeroCombatStats(hero), modifiers);
   const skillMult = getHeroPrimarySkillMultiplier(hero);
   const gearMult = getHeroGearMultiplier(hero);
   const moraleMult = getMoraleMultiplier(stats.morale, 100);
+  const m = { ...emptyMods(), ...(modifiers ?? {}) };
 
-  const offence = stats.atk * skillMult * gearMult * moraleMult;
-  const defense = stats.def * gearMult;
-  const sustain = (stats.hp + stats.def * 12) * gearMult;
+  const damageMult = 1 + (m.damage_pct + m.skill_damage_pct + m.crit_pct * 0.35) / 100;
+  const reductionMult = 1 + m.damage_reduction_pct / 100;
+
+  const offence = stats.atk * skillMult * gearMult * moraleMult * damageMult;
+  const defense = stats.def * gearMult * reductionMult;
+  const sustain = (stats.hp + stats.def * 12) * gearMult * reductionMult;
   const effective_power = stats.power * gearMult * moraleMult;
 
   return {
@@ -97,8 +133,12 @@ export function scoreHero(hero: HeroRosterEntry) {
   };
 }
 
-export function scoreSquad(heroes: HeroRosterEntry[], mode: OptimizerMode) {
-  const heroScores = heroes.map(scoreHero);
+export function scoreSquad(
+  heroes: HeroRosterEntry[],
+  mode: OptimizerMode,
+  modifiers?: CombatModifiers
+) {
+  const heroScores = heroes.map((hero) => scoreHero(hero, modifiers));
   const lineupMult = getBestTypeLineupMultiplier(heroes);
   const weights = COMBAT_MATH_SPEC.weightsByMode[mode];
 
