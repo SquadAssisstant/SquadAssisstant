@@ -10,6 +10,23 @@ export type FormationSlot = 1 | 2 | 3 | 4 | 5;
 
 export type TroopType = "tank" | "missile" | "aircraft" | "unknown";
 
+export type CombatModifiers = {
+  attack_flat?: number;
+  attack_pct?: number;
+  hp_flat?: number;
+  hp_pct?: number;
+  defense_flat?: number;
+  defense_pct?: number;
+  power_flat?: number;
+  power_pct?: number;
+  damage_pct?: number;
+  damage_reduction_pct?: number;
+  march_flat?: number;
+  march_pct?: number;
+  skill_damage_pct?: number;
+  crit_pct?: number;
+};
+
 export type CombatStats = {
   hp: number;
   atk: number;
