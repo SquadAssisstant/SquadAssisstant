@@ -141,6 +141,7 @@ export type OptimizedSquad = {
 export type OptimizerRequest = {
   mode?: OptimizerMode;
   squad_count?: number;
+  squad_modes?: OptimizerMode[];
   locked_heroes?: string[];
 };
 
