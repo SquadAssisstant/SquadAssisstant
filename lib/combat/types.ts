@@ -19,6 +19,23 @@ export type CombatStats = {
   march_size: number;
 };
 
+export type CombatModifiers = {
+  attack_flat?: number;
+  attack_pct?: number;
+  hp_flat?: number;
+  hp_pct?: number;
+  defense_flat?: number;
+  defense_pct?: number;
+  power_flat?: number;
+  power_pct?: number;
+  damage_pct?: number;
+  damage_reduction_pct?: number;
+  march_flat?: number;
+  march_pct?: number;
+  skill_damage_pct?: number;
+  crit_pct?: number;
+};
+
 export type GearPieceSlot = "weapon" | "data_chip" | "armor" | "radar";
 
 export type GearPiece = {
@@ -86,6 +103,7 @@ export type PlayerCombatContext = {
   heroes: HeroRosterEntry[];
   drone: DroneContext;
   overlord: OverlordContext;
+  modifiers?: CombatModifiers;
   shared_notes: string[];
 };
 
