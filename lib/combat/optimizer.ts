@@ -202,6 +202,30 @@ function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) {
   return `${hero.name} contributed strongly across power, offense, defense, and sustain.`;
 }
 
+function heroSelectionValue(hero: HeroRosterEntry, mode: OptimizerMode) {
+  const s = scoreHero(hero);
+
+  switch (mode) {
+    case "highest_total_power":
+      return s.effective_power + s.total * 0.4;
+
+    case "pure_offence":
+      return s.offence * 2.5 + s.effective_power * 0.5;
+
+    case "offence_leaning_sustain":
+      return s.offence * 1.8 + s.sustain * 1.1 + s.defense * 0.8 + s.effective_power * 0.4;
+
+    case "defense_leaning_sustain":
+      return s.defense * 1.8 + s.sustain * 1.6 + s.offence * 0.8 + s.effective_power * 0.4;
+
+    case "pure_defense":
+      return s.defense * 2.3 + s.sustain * 2 + s.effective_power * 0.3;
+
+    case "balanced":
+    default:
+      return s.total;
+  }
+}
 export function runOptimizer(input: {
   context: PlayerCombatContext;
   mode?: string;
@@ -227,9 +251,7 @@ export function runOptimizer(input: {
   const allOwnedGear = flattenOwnedGear(heroes);
 
   const lockedPool = heroes.filter((h) => lockedHeroes.includes(h.hero_key));
-  const freePool = heroes
-    .filter((h) => !lockedHeroes.includes(h.hero_key))
-    .sort((a, b) => scoreHero(b).total - scoreHero(a).total);
+  const freePool = heroes.filter((h) => !lockedHeroes.includes(h.hero_key));
 
   const used = new Set<string>();
   const squads: OptimizedSquad[] = [];
@@ -248,12 +270,15 @@ export function runOptimizer(input: {
       }
     }
 
-    for (const hero of freePool) {
-      if (squadHeroes.length >= 5) break;
-      if (used.has(hero.hero_key)) continue;
-      used.add(hero.hero_key);
-      squadHeroes.push(hero);
-    }
+    const rankedFreePool = freePool
+  .filter((h) => !used.has(h.hero_key))
+  .sort((a, b) => heroSelectionValue(b, squadMode) - heroSelectionValue(a, squadMode));
+
+for (const hero of rankedFreePool) {
+  if (squadHeroes.length >= 5) break;
+  used.add(hero.hero_key);
+  squadHeroes.push(hero);
+}
 
     const placements = buildPlacements(squadHeroes, squadMode);
 const gearAssignments = assignBestGearForSquad(squadHeroes, allOwnedGear, squadMode);
