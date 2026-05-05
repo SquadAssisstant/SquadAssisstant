@@ -194,7 +194,25 @@ function assignBestGearForSquad(
   return assignments;
 }
 
-function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) {
+function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) 
+function heroRoleSelectionValue(
+  hero: HeroRosterEntry,
+  role: "frontline" | "center" | "backline",
+  mode: OptimizerMode
+) {
+  const s = scoreHero(hero);
+  const modeValue = heroSelectionValue(hero, mode);
+
+  if (role === "frontline") {
+    return s.defense * 2.2 + s.sustain * 2 + s.effective_power * 0.4 + modeValue * 0.35;
+  }
+
+  if (role === "center") {
+    return s.total * 1.6 + s.sustain * 0.8 + s.offence * 0.8 + s.defense * 0.8 + modeValue * 0.4;
+  }
+
+  return s.offence * 2.4 + s.effective_power * 0.6 + s.total * 0.4 + modeValue * 0.35;
+}{
   const s = scoreHero(hero);
   if (mode === "highest_total_power") return `${hero.name} scored highly on total effective power.`;
   if (mode === "pure_offence") return `${hero.name} scored highly on offence and skill damage conversion.`;
@@ -270,15 +288,23 @@ export function runOptimizer(input: {
       }
     }
 
-    const rankedFreePool = freePool
-  .filter((h) => !used.has(h.hero_key))
-  .sort((a, b) => heroSelectionValue(b, squadMode) - heroSelectionValue(a, squadMode));
+    while (squadHeroes.length < 5) {
+  const targetSlot = FORMATION_ORDER[squadHeroes.length];
+  const targetRole = roleForSlot(targetSlot);
 
-for (const hero of rankedFreePool) {
-  if (squadHeroes.length >= 5) break;
-  used.add(hero.hero_key);
-  squadHeroes.push(hero);
-}
+  const candidate = freePool
+    .filter((h) => !used.has(h.hero_key))
+    .sort(
+      (a, b) =>
+        heroRoleSelectionValue(b, targetRole, squadMode) -
+        heroRoleSelectionValue(a, targetRole, squadMode)
+    )[0];
+
+  if (!candidate) break;
+
+  used.add(candidate.hero_key);
+  squadHeroes.push(candidate);
+    }
 
     const placements = buildPlacements(squadHeroes, squadMode);
 const gearAssignments = assignBestGearForSquad(squadHeroes, allOwnedGear, squadMode);
