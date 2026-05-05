@@ -205,10 +205,14 @@ function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) {
 export function runOptimizer(input: {
   context: PlayerCombatContext;
   mode?: string;
+  squadModes?: string[];
   squadCount?: number;
   lockedHeroes?: string[];
 }): OptimizerResult {
   const mode = normalizeMode(input.mode);
+  const squadModes = Array.isArray(input.squadModes)
+    ? input.squadModes.map((m) => normalizeMode(m))
+    : [];
   const squadCount = Math.max(1, Math.min(4, Number(input.squadCount || 1)));
   const lockedHeroes = uniqueBy(
     (Array.isArray(input.lockedHeroes) ? input.lockedHeroes : []).map((x) => String(x).trim().toLowerCase()).filter(Boolean),
@@ -233,7 +237,8 @@ export function runOptimizer(input: {
   let lockedIndex = 0;
 
   for (let squadNumber = 1; squadNumber <= squadCount; squadNumber++) {
-    const squadHeroes: HeroRosterEntry[] = [];
+  const squadMode = squadModes[squadNumber - 1] ?? mode;
+  const squadHeroes: HeroRosterEntry[] = [];
 
     while (lockedIndex < lockedPool.length && squadHeroes.length < 5) {
       const hero = lockedPool[lockedIndex++];
@@ -250,9 +255,9 @@ export function runOptimizer(input: {
       squadHeroes.push(hero);
     }
 
-    const placements = buildPlacements(squadHeroes, mode);
-    const gearAssignments = assignBestGearForSquad(squadHeroes, allOwnedGear, mode);
-    const scores = scoreSquad(squadHeroes, mode);
+    const placements = buildPlacements(squadHeroes, squadMode);
+const gearAssignments = assignBestGearForSquad(squadHeroes, allOwnedGear, squadMode);
+const scores = scoreSquad(squadHeroes, squadMode);
 
     squads.push({
       squad_number: squadNumber,
@@ -261,8 +266,8 @@ export function runOptimizer(input: {
       gear_assignments: gearAssignments,
       scores,
       explanation: [
-        `Squad ${squadNumber} was built using the ${mode} optimizer mode.`,
-        ...squadHeroes.map((h) => heroReason(h, mode)),
+        `Squad ${squadNumber} was built using the ${squadMode} optimizer mode.`,
+...squadHeroes.map((h) => heroReason(h, squadMode)),
         `Formation placement prioritizes front-line sustain, center stability, and rear damage conversion.`,
         `Gear assignment uses the best saved owned gear pool available across all heroes, not only currently equipped gear.`,
       ],
