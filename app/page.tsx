@@ -631,6 +631,19 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
 
   const [optimizerMode, setOptimizerMode] = useState<OptimizerMode>("balanced");
   const [optimizerSquadCount, setOptimizerSquadCount] = useState(1);
+  const [optimizerSquadModes, setOptimizerSquadModes] = useState<OptimizerMode[]>([
+  "balanced",
+  "balanced",
+  "balanced",
+  "balanced",
+]);
+  function updateOptimizerSquadMode(index: number, mode: OptimizerMode) {
+  setOptimizerSquadModes((prev) => {
+    const next = [...prev];
+    next[index] = mode;
+    return next;
+  });
+  }
   const [optimizerLockedHeroes, setOptimizerLockedHeroes] = useState<string[]>([]);
   const [optimizerBusy, setOptimizerBusy] = useState(false);
   const [optimizerErr, setOptimizerErr] = useState<string | null>(null);
@@ -1339,8 +1352,9 @@ setBattleReasons(json?.reasons ?? []);
         credentials: "include",
         body: JSON.stringify({
           mode: optimizerMode,
-          squad_count: optimizerSquadCount,
-          locked_heroes: optimizerLockedHeroes,
+squadModes: optimizerSquadModes.slice(0, optimizerSquadCount),
+squad_count: optimizerSquadCount,
+locked_heroes: optimizerLockedHeroes,
         }),
       });
 
@@ -2505,7 +2519,11 @@ className={`overflow-hidden rounded-xl border ${
                 <div className="text-xs uppercase tracking-[0.25em] text-white/45">Mode</div>
                 <select
                   value={optimizerMode}
-                  onChange={(e) => setOptimizerMode(e.target.value as OptimizerMode)}
+                  onChange={(e) => {
+  const nextMode = e.target.value as OptimizerMode;
+  setOptimizerMode(nextMode);
+  setOptimizerSquadModes([nextMode, nextMode, nextMode, nextMode]);
+}}
                   className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
                 >
                   {OPTIMIZER_MODE_OPTIONS.map((opt) => (
@@ -2528,6 +2546,26 @@ className={`overflow-hidden rounded-xl border ${
                   <option value={3}>3 Squads</option>
                   <option value={4}>4 Squads</option>
                 </select>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+  {Array.from({ length: optimizerSquadCount }).map((_, idx) => (
+    <label key={idx} className="block text-sm text-white/75">
+      Squad {idx + 1} Optimization
+      <select
+        value={optimizerSquadModes[idx] ?? optimizerMode}
+        onChange={(e) =>
+          updateOptimizerSquadMode(idx, e.target.value as OptimizerMode)
+        }
+        className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0a0f18] px-3 py-2 text-sm text-white"
+      >
+        {OPTIMIZER_MODE_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  ))}
+</div>
               </div>
 
               <div>
