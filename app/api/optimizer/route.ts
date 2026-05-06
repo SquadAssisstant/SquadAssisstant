@@ -229,13 +229,12 @@ export async function POST(req: Request) {
   | null;
 
   try {
-    const context = await buildCombatContext(s.profileId);
     const result = runOptimizer({
   context,
   mode: body?.mode,
-  squadModes: Array.isArray(body?.squadModes) ? body.squadModes : [],
+  squadModes: body?.squadModes ?? [],
   squadCount: body?.squad_count,
-  lockedHeroes: Array.isArray(body?.locked_heroes) ? body?.locked_heroes : [],
+  lockedHeroes: Array.isArray(body?.locked_heroes) ? body.locked_heroes : [],
 });
 
     return NextResponse.json({
