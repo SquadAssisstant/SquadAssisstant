@@ -220,21 +220,23 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | {
-        mode?: string;
-        squad_count?: number;
-        locked_heroes?: string[];
-      }
-    | null;
+  | {
+      mode?: string;
+      squadModes?: string[];
+      squad_count?: number;
+      locked_heroes?: string[];
+    }
+  | null;
 
   try {
     const context = await buildCombatContext(s.profileId);
     const result = runOptimizer({
-      context,
-      mode: body?.mode,
-      squadCount: body?.squad_count,
-      lockedHeroes: Array.isArray(body?.locked_heroes) ? body?.locked_heroes : [],
-    });
+  context,
+  mode: body?.mode,
+  squadModes: Array.isArray(body?.squadModes) ? body.squadModes : [],
+  squadCount: body?.squad_count,
+  lockedHeroes: Array.isArray(body?.locked_heroes) ? body?.locked_heroes : [],
+});
 
     return NextResponse.json({
       ok: true,
