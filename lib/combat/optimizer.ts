@@ -199,7 +199,42 @@ function heroRoleSelectionValue(
   hero: HeroRosterEntry,
   role: "frontline" | "center" | "backline",
   mode: OptimizerMode
+) 
+  function squadCandidateValue(
+  currentSquad: HeroRosterEntry[],
+  candidate: HeroRosterEntry,
+  mode: OptimizerMode
 ) {
+  const nextSquad = [...currentSquad, candidate];
+  const squadScore = scoreSquad(nextSquad, mode);
+  const candidateScore = scoreHero(candidate);
+
+  const troopTypes = new Set(nextSquad.map((h) => h.troop_type).filter(Boolean));
+  const troopDiversityBonus = troopTypes.size * 25;
+
+  const sustainTotal = nextSquad.reduce((sum, h) => sum + scoreHero(h).sustain, 0);
+  const offenceTotal = nextSquad.reduce((sum, h) => sum + scoreHero(h).offence, 0);
+  const defenseTotal = nextSquad.reduce((sum, h) => sum + scoreHero(h).defense, 0);
+
+  const weakFrontlinePenalty =
+    nextSquad.length >= 2 && defenseTotal < offenceTotal * 0.45 ? 150 : 0;
+
+  const lowDamagePenalty =
+    nextSquad.length >= 4 && offenceTotal < defenseTotal * 0.35 ? 120 : 0;
+
+  const sustainBonus =
+    sustainTotal > 0 ? Math.min(200, sustainTotal * 0.08) : 0;
+
+  return (
+    squadScore.total +
+    candidateScore.total * 0.35 +
+    troopDiversityBonus +
+    sustainBonus -
+    weakFrontlinePenalty -
+    lowDamagePenalty
+  );
+  }
+{
   const s = scoreHero(hero);
   const modeValue = heroSelectionValue(hero, mode);
 
@@ -294,11 +329,15 @@ export function runOptimizer(input: {
 
   const candidate = freePool
     .filter((h) => !used.has(h.hero_key))
-    .sort(
-      (a, b) =>
-        heroRoleSelectionValue(b, targetRole, squadMode) -
-        heroRoleSelectionValue(a, targetRole, squadMode)
-    )[0];
+    .sort((a, b) => {
+  const aRole = heroRoleSelectionValue(a, targetRole, squadMode);
+  const bRole = heroRoleSelectionValue(b, targetRole, squadMode);
+
+  const aSquad = squadCandidateValue(squadHeroes, a, squadMode);
+  const bSquad = squadCandidateValue(squadHeroes, b, squadMode);
+
+  return (bRole + bSquad) - (aRole + aSquad);
+})[0];
 
   if (!candidate) break;
 
