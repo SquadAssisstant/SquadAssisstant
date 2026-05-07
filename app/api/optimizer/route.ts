@@ -229,7 +229,9 @@ export async function POST(req: Request) {
   | null;
 
   try {
-    const result = runOptimizer({
+    const context = await buildCombatContext(s.profileId);
+
+const result = runOptimizer({
   context,
   mode: body?.mode,
   squadModes: body?.squadModes ?? [],
