@@ -236,7 +236,7 @@ const result = runOptimizer({
   mode: body?.mode,
   squadModes: body?.squadModes ?? [],
   squadCount: body?.squad_count,
-  lockedHeroes: Array.isArray(body?.locked_heroes) ? body.locked_heroes : [],
+  lockedHeroes: body?.locked_heroes ?? [],
 });
 
     return NextResponse.json({
