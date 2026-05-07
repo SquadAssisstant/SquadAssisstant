@@ -303,6 +303,12 @@ function fmtDate(value?: string | null) {
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString();
 }
+function optimizerModeLabel(mode?: string) {
+  return (
+    OPTIMIZER_MODE_OPTIONS.find((opt) => opt.value === mode)?.label ??
+    "Balanced/Combat Sustainability"
+  );
+}
 
 function emptyHeroProfile(): HeroProfileValue {
   return {
@@ -1370,7 +1376,7 @@ locked_heroes: optimizerLockedHeroes,
     } finally {
       setOptimizerBusy(false);
     }
-  }, [optimizerLockedHeroes, optimizerMode, optimizerSquadCount]);
+  }, [optimizerLockedHeroes, optimizerMode, optimizerSquadCount, optimizerSquadModes]);
 
   const askOptimizer = useCallback(async () => {
     if (!optimizerQuestion.trim()) {
@@ -2222,9 +2228,9 @@ className={`overflow-hidden rounded-xl border ${
         open={battleOpen}
         wide
       >
-        <div className="space-y-6">
+        ="space-y-6">
           {battleErr ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleErr}</div>
+            ="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleErr}</div>
           ) : null}
           {battleReportFileErr ? (
   <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{battleReportFileErr}</div>
