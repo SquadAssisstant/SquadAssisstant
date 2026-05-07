@@ -240,6 +240,7 @@ type SavedOptimizerFile = {
   mode: string;
   squad_count: number;
   locked_heroes?: string[];
+  squad_modes?: OptimizerMode[];
   note?: string | null;
   created_at?: string;
   updated_at?: string;
