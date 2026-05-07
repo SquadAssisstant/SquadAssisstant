@@ -2659,6 +2659,14 @@ className={`overflow-hidden rounded-xl border ${
                   {optimizerResult.squads.map((squad) => (
                     <div key={squad.squad_number} className="rounded-3xl border border-white/10 bg-black/20 p-4">
                       <div className="text-lg font-semibold text-white">Squad {squad.squad_number}</div>
+                      <p className="mt-1 text-xs text-white/50">
+  Optimized for:{" "}
+  <span className="font-semibold text-cyan-200">
+    {optimizerModeLabel(
+      optimizerSquadModes[squad.squad_number - 1] ?? optimizerMode
+    )}
+  </span>
+</p>
                       <div className="mt-2 grid gap-2 text-sm text-white/75 md:grid-cols-4">
                         <div>Total: {Math.round(squad.scores.total)}</div>
                         <div>Offence: {Math.round(squad.scores.offence)}</div>
