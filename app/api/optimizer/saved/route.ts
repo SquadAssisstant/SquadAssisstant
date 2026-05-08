@@ -50,6 +50,13 @@ function cleanLockedHeroes(v: unknown): string[] {
   );
 }
 
+function cleanSquadModes(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
 function cleanSquadCount(v: unknown): number {
   const n = Number(v);
   if (!Number.isFinite(n)) return 1;
@@ -120,6 +127,7 @@ export async function POST(req: Request) {
         squad_count?: unknown;
         locked_heroes?: unknown;
         result?: unknown;
+        squad_modes?: unknown;
       }
     | null;
 
@@ -128,7 +136,8 @@ export async function POST(req: Request) {
   const mode = cleanMode(body?.mode);
   const squad_count = cleanSquadCount(body?.squad_count);
   const locked_heroes = cleanLockedHeroes(body?.locked_heroes);
-  const result = body?.result ?? null;
+const squad_modes = cleanSquadModes(body?.squad_modes);
+const result = body?.result ?? null;
 
   if (!label) {
     return NextResponse.json({ ok: false, error: "label is required" }, { status: 400 });
@@ -142,14 +151,17 @@ export async function POST(req: Request) {
   const ins = await sb
     .from("optimizer_saved_runs")
     .insert({
-      profile_id: s.profileId,
-      label,
-      note,
-      mode,
-      squad_count,
-      locked_heroes,
-      result,
-    })
+  profile_id: s.profileId,
+  label,
+  note,
+  mode,
+  squad_count,
+  locked_heroes,
+  result: {
+    ...(typeof result === "object" && result ? result : {}),
+    squad_modes,
+  },
+})
     .select("id, profile_id, label, mode, squad_count, locked_heroes, note, created_at, updated_at")
     .single();
 
