@@ -1446,9 +1446,10 @@ locked_heroes: optimizerLockedHeroes,
         body: JSON.stringify({
           label: label.trim(),
           mode: optimizerResult.mode,
-          squad_count: optimizerResult.squad_count,
-          locked_heroes: optimizerResult.locked_heroes,
-          result: optimizerResult,
+squad_modes: optimizerSquadModes.slice(0, optimizerResult.squad_count),
+squad_count: optimizerResult.squad_count,
+locked_heroes: optimizerResult.locked_heroes,
+result: optimizerResult,
         }),
       });
 
