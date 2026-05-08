@@ -11,6 +11,7 @@ import {
   SquadPlacement,
 } from "@/lib/combat/types";
 import { getHeroCombatStats, scoreHero, scoreSquad } from "@/lib/combat/scoring";
+import { contextAdjustedHeroValue, hasSavedContextData } from "@/lib/combat/contextModifiers";
 
 const FORMATION_ORDER: FormationSlot[] = [1, 2, 3, 4, 5];
 
@@ -38,20 +39,6 @@ function roleForSlot(slot: FormationSlot): "frontline" | "center" | "backline" {
   if (slot === 3) return "center";
   return "backline";
 }
-function safeContextNumber(value: any) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function hasSavedContextData(value: any) {
-  if (!value) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
-
-function combatContextWeights(context: PlayerCombatContext, mode: OptimizerMode) {
-  const modifiers = context.modifiers ?? {};
 
   const attackWeight =
     safeContextNumber(modifiers.attack_flat) * 0.01 +
@@ -122,11 +109,6 @@ function combatContextWeights(context: PlayerCombatContext, mode: OptimizerMode)
   return base;
 }
 
-function contextAdjustedHeroValue(
-  hero: HeroRosterEntry,
-  context: PlayerCombatContext,
-  mode: OptimizerMode
-) {
   const s = scoreHero(hero);
   const weights = combatContextWeights(context, mode);
 
