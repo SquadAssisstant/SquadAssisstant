@@ -13,7 +13,44 @@ export function hasSavedContextData(value: any) {
   if (typeof value === "object") return Object.keys(value).length > 0;
   return true;
 }
+function collectNumbers(value: any): number[] {
+  const out: number[] = [];
 
+  function walk(node: any) {
+    if (node == null) return;
+
+    if (typeof node === "number") {
+      if (Number.isFinite(node)) out.push(node);
+      return;
+    }
+
+    if (typeof node === "string") {
+      const cleaned = node.replace(/[,%]/g, "").trim();
+      const n = Number(cleaned);
+      if (Number.isFinite(n)) out.push(n);
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+
+    if (typeof node === "object") {
+      for (const item of Object.values(node)) walk(item);
+    }
+  }
+
+  walk(value);
+  return out;
+}
+
+function sumNumbers(value: any, cap = 500) {
+  return Math.min(
+    cap,
+    collectNumbers(value).reduce((sum, n) => sum + n, 0)
+  );
+}
 export function combatContextWeights(
   context: PlayerCombatContext,
   mode: OptimizerMode
@@ -45,12 +82,25 @@ export function combatContextWeights(
   const drone = context.drone ?? {};
   const overlord = context.overlord ?? {};
 
-  const droneAttackBonus =
-    (hasSavedContextData(drone.combat_boost) ? 45 : 0) +
-    (hasSavedContextData(drone.boost_chips) ? 35 : 0);
+  const droneCombatBoostValue = sumNumbers(drone.combat_boost, 700);
+const droneBoostChipValue = sumNumbers(drone.boost_chips, 500);
+const droneComponentValue = sumNumbers(drone.components, 600);
+const droneProfileValue = sumNumbers(drone.profile, 300);
 
-  const droneBalancedBonus =
-    hasSavedContextData(drone.components) ? 30 : 0;
+const droneAttackBonus =
+  (hasSavedContextData(drone.combat_boost) ? 25 : 0) +
+  (hasSavedContextData(drone.boost_chips) ? 20 : 0) +
+  droneCombatBoostValue * 0.08 +
+  droneBoostChipValue * 0.07;
+
+const droneBalancedBonus =
+  (hasSavedContextData(drone.components) ? 18 : 0) +
+  droneComponentValue * 0.05 +
+  droneProfileValue * 0.03;
+
+const droneSustainBonus =
+  droneComponentValue * 0.04 +
+  droneProfileValue * 0.025;
 
   const overlordAttackBonus =
     hasSavedContextData(overlord.skills) ? 45 : 0;
@@ -61,15 +111,27 @@ export function combatContextWeights(
     (hasSavedContextData(overlord.train) ? 25 : 0);
 
   const base = {
-    offence:
-      attackWeight +
-      droneAttackBonus +
-      overlordAttackBonus +
-      droneBalancedBonus,
-    defense: defenseWeight + overlordSustainBonus + droneBalancedBonus,
-    sustain: sustainWeight + overlordSustainBonus + droneBalancedBonus,
-    effective_power: powerWeight + droneBalancedBonus,
-  };
+  offence:
+    attackWeight +
+    droneAttackBonus +
+    overlordAttackBonus +
+    droneBalancedBonus,
+  defense:
+    defenseWeight +
+    overlordSustainBonus +
+    droneBalancedBonus +
+    droneSustainBonus,
+  sustain:
+    sustainWeight +
+    overlordSustainBonus +
+    droneBalancedBonus +
+    droneSustainBonus,
+  effective_power:
+    powerWeight +
+    droneBalancedBonus +
+    droneAttackBonus * 0.35 +
+    droneSustainBonus * 0.25,
+};
 
   if (mode === "pure_offence") {
     base.offence *= 1.35;
