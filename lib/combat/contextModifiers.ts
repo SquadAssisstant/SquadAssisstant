@@ -102,13 +102,32 @@ const droneSustainBonus =
   droneComponentValue * 0.04 +
   droneProfileValue * 0.025;
 
-  const overlordAttackBonus =
-    hasSavedContextData(overlord.skills) ? 45 : 0;
+  const overlordSkillValue = sumNumbers(overlord.skills, 700);
+const overlordPromoteValue = sumNumbers(overlord.promote, 500);
+const overlordBondValue = sumNumbers(overlord.bond, 400);
+const overlordTrainValue = sumNumbers(overlord.train, 500);
+const overlordProfileValue = sumNumbers(overlord.profile, 300);
 
-  const overlordSustainBonus =
-    (hasSavedContextData(overlord.promote) ? 30 : 0) +
-    (hasSavedContextData(overlord.bond) ? 25 : 0) +
-    (hasSavedContextData(overlord.train) ? 25 : 0);
+const overlordAttackBonus =
+  (hasSavedContextData(overlord.skills) ? 25 : 0) +
+  overlordSkillValue * 0.08 +
+  overlordProfileValue * 0.025;
+
+const overlordSustainBonus =
+  (hasSavedContextData(overlord.promote) ? 18 : 0) +
+  (hasSavedContextData(overlord.bond) ? 15 : 0) +
+  (hasSavedContextData(overlord.train) ? 15 : 0) +
+  overlordPromoteValue * 0.06 +
+  overlordBondValue * 0.05 +
+  overlordTrainValue * 0.05 +
+  overlordProfileValue * 0.025;
+
+const overlordPowerBonus =
+  overlordSkillValue * 0.025 +
+  overlordPromoteValue * 0.025 +
+  overlordBondValue * 0.02 +
+  overlordTrainValue * 0.02 +
+  overlordProfileValue * 0.03;
 
   const base = {
   offence:
@@ -127,10 +146,11 @@ const droneSustainBonus =
     droneBalancedBonus +
     droneSustainBonus,
   effective_power:
-    powerWeight +
-    droneBalancedBonus +
-    droneAttackBonus * 0.35 +
-    droneSustainBonus * 0.25,
+  powerWeight +
+  droneBalancedBonus +
+  droneAttackBonus * 0.35 +
+  droneSustainBonus * 0.25 +
+  overlordPowerBonus,
 };
 
   if (mode === "pure_offence") {
