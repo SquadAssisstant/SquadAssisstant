@@ -498,6 +498,91 @@ function squadCandidateValue(
   lowDamagePenalty
 );
 }
+function optimizedSquadValue(
+  heroes: HeroRosterEntry[],
+  mode: OptimizerMode,
+  context: PlayerCombatContext
+) {
+  const squadScore = scoreSquad(heroes, mode);
+  const synergy = squadSynergyValue(heroes, mode);
+  const contextValue = heroes.reduce(
+    (sum, hero) => sum + contextAdjustedHeroValue(hero, context, mode),
+    0
+  );
+
+  return squadScore.total + synergy + contextValue;
+}
+
+function improveSquadWithUnusedHeroes(
+  squadHeroes: HeroRosterEntry[],
+  unusedHeroes: HeroRosterEntry[],
+  mode: OptimizerMode,
+  context: PlayerCombatContext
+) {
+  const improved = [...squadHeroes];
+  const remainingUnused = [...unusedHeroes];
+
+  let changed = true;
+  let passes = 0;
+
+  while (changed && passes < 2) {
+    changed = false;
+    passes++;
+
+    let bestGain = 0;
+    let bestSquadIndex = -1;
+    let bestUnusedIndex = -1;
+    let bestCandidateSquad: HeroRosterEntry[] | null = null;
+
+    const currentValue = optimizedSquadValue(improved, mode, context);
+
+    for (let squadIndex = 0; squadIndex < improved.length; squadIndex++) {
+      for (
+        let unusedIndex = 0;
+        unusedIndex < remainingUnused.length;
+        unusedIndex++
+      ) {
+        const candidateSquad = [...improved];
+        candidateSquad[squadIndex] = remainingUnused[unusedIndex];
+
+        const candidateValue = optimizedSquadValue(
+          candidateSquad,
+          mode,
+          context
+        );
+
+        const gain = candidateValue - currentValue;
+
+        if (gain > bestGain) {
+          bestGain = gain;
+          bestSquadIndex = squadIndex;
+          bestUnusedIndex = unusedIndex;
+          bestCandidateSquad = candidateSquad;
+        }
+      }
+    }
+
+    if (
+      bestCandidateSquad &&
+      bestSquadIndex >= 0 &&
+      bestUnusedIndex >= 0 &&
+      bestGain > 25
+    ) {
+      const removedHero = improved[bestSquadIndex];
+      const addedHero = remainingUnused[bestUnusedIndex];
+
+      improved[bestSquadIndex] = addedHero;
+      remainingUnused[bestUnusedIndex] = removedHero;
+
+      changed = true;
+    }
+  }
+
+  return {
+    heroes: improved,
+    unused: remainingUnused,
+  };
+}
 function optimizerParityAudit(context: PlayerCombatContext) {
   const notes: string[] = [];
 
