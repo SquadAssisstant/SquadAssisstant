@@ -194,21 +194,116 @@ function assignBestGearForSquad(
 
   return assignments;
 }
+function strongestHeroTrait(hero: HeroRosterEntry) {
+  const s = scoreHero(hero);
 
-function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) {
-  if (mode === "highest_total_power") {
-    return `${hero.name} scored highly on total effective power.`;
+  const traits = [
+    { key: "offence", label: "offensive pressure", value: s.offence },
+    { key: "defense", label: "defensive stability", value: s.defense },
+    { key: "sustain", label: "sustain support", value: s.sustain },
+    { key: "effective_power", label: "overall effective power", value: s.effective_power },
+  ];
+
+  traits.sort((a, b) => b.value - a.value);
+  return traits[0]?.label ?? "balanced contribution";
+}
+
+function squadExplanationDetails(
+  squadHeroes: HeroRosterEntry[],
+  placements: SquadPlacement[],
+  mode: OptimizerMode
+) {
+  const front = placements.filter((p) => p.assigned_role === "frontline");
+  const center = placements.find((p) => p.assigned_role === "center");
+  const back = placements.filter((p) => p.assigned_role === "backline");
+
+  const scores = squadHeroes.map((h) => scoreHero(h));
+  const offenceTotal = scores.reduce((sum, s) => sum + s.offence, 0);
+  const defenseTotal = scores.reduce((sum, s) => sum + s.defense, 0);
+  const sustainTotal = scores.reduce((sum, s) => sum + s.sustain, 0);
+
+  const troopTypes = Array.from(
+    new Set(
+      squadHeroes
+        .map((h) => String(h.troop_type || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const lines: string[] = [];
+
+  if (front.length) {
+    lines.push(
+      `Frontline uses ${front.map((p) => p.hero_name).join(" and ")} to anchor defensive stability and absorb pressure.`
+    );
+  }
+
+  if (center) {
+    lines.push(
+      `${center.hero_name} is placed center because that slot benefits from balanced stat contribution and flexible support.`
+    );
+  }
+
+  if (back.length) {
+    lines.push(
+      `Backline uses ${back.map((p) => p.hero_name).join(" and ")} to preserve damage output while the frontline holds.`
+    );
+  }
+
+  if (troopTypes.length >= 2) {
+    lines.push(
+      `Troop spread includes ${troopTypes.join(", ")}, improving formation flexibility and reducing overstack risk.`
+    );
+  }
+
+  if (sustainTotal >= defenseTotal * 0.18) {
+    lines.push("Sustain is high enough to support the defensive core instead of relying on raw defense only.");
+  }
+
+  if (offenceTotal >= defenseTotal * 0.3) {
+    lines.push("Damage output is strong enough that the squad should not stall into a purely defensive lineup.");
   }
 
   if (mode === "pure_offence") {
-    return `${hero.name} scored highly on offence and skill damage conversion.`;
+    lines.push("Pure offence mode weighted damage conversion and offensive pressure highest.");
+  } else if (mode === "pure_defense") {
+    lines.push("Pure defense mode weighted frontline durability and sustain highest.");
+  } else if (mode === "offence_leaning_sustain") {
+    lines.push("Offence-leaning sustain mode favored damage while keeping enough durability to hold formation.");
+  } else if (mode === "defense_leaning_sustain") {
+    lines.push("Defense-leaning sustain mode favored durability while preserving enough damage to finish fights.");
+  } else if (mode === "highest_total_power") {
+    lines.push("Highest total power mode prioritized effective power across the full squad.");
+  } else {
+    lines.push("Balanced mode kept offence, defense, sustain, and effective power in the closest practical balance.");
+  }
+
+  return lines;
+}
+function heroReason(hero: HeroRosterEntry, mode: OptimizerMode) {
+  const trait = strongestHeroTrait(hero);
+
+  if (mode === "highest_total_power") {
+    return `${hero.name} was selected for ${trait} and high total effective power.`;
+  }
+
+  if (mode === "pure_offence") {
+    return `${hero.name} was selected for ${trait}, with offence weighted heavily by this mode.`;
   }
 
   if (mode === "pure_defense") {
-    return `${hero.name} scored highly on defense and frontline sustain.`;
+    return `${hero.name} was selected for ${trait}, with defense and sustain weighted heavily by this mode.`;
   }
 
-  return `${hero.name} contributed strongly across power, offense, defense, and sustain.`;
+  if (mode === "offence_leaning_sustain") {
+    return `${hero.name} was selected for ${trait}, balancing damage with enough sustain to stay useful.`;
+  }
+
+  if (mode === "defense_leaning_sustain") {
+    return `${hero.name} was selected for ${trait}, supporting a durable squad without dropping damage too far.`;
+  }
+
+  return `${hero.name} was selected for ${trait} and balanced squad contribution.`;
 }
 
 function heroSelectionValue(hero: HeroRosterEntry, mode: OptimizerMode) {
@@ -480,11 +575,11 @@ const scores = scoreSquad(squadHeroes, squadMode);
       gear_assignments: gearAssignments,
       scores,
       explanation: [
-        `Squad ${squadNumber} was built using the ${squadMode} optimizer mode.`,
-...squadHeroes.map((h) => heroReason(h, squadMode)),
-        `Formation placement prioritizes front-line sustain, center stability, and rear damage conversion.`,
-        `Gear assignment uses the best saved owned gear pool available across all heroes, not only currently equipped gear.`,
-      ],
+  `Squad ${squadNumber} was built using the ${squadMode} optimizer mode.`,
+  ...squadExplanationDetails(squadHeroes, placements, squadMode),
+  ...squadHeroes.map((h) => heroReason(h, squadMode)),
+  `Gear assignment uses the best saved owned gear pool available across all heroes, not only currently equipped gear.`,
+],
     });
   }
 
