@@ -280,7 +280,69 @@ function heroRoleSelectionValue(
     modeValue * 0.35
   );
 }
+function squadSynergyValue(heroes: HeroRosterEntry[], mode: OptimizerMode) {
+  if (!heroes.length) return 0;
 
+  const scores = heroes.map((h) => scoreHero(h));
+  const offenceTotal = scores.reduce((sum, s) => sum + s.offence, 0);
+  const defenseTotal = scores.reduce((sum, s) => sum + s.defense, 0);
+  const sustainTotal = scores.reduce((sum, s) => sum + s.sustain, 0);
+  const powerTotal = scores.reduce((sum, s) => sum + s.effective_power, 0);
+
+  const troopCounts = new Map<string, number>();
+  for (const hero of heroes) {
+    const troop = String(hero.troop_type || "unknown").toLowerCase();
+    troopCounts.set(troop, (troopCounts.get(troop) ?? 0) + 1);
+  }
+
+  const knownTroopTypes = [...troopCounts.keys()].filter((t) => t !== "unknown");
+  const troopDiversityBonus = knownTroopTypes.length >= 2 ? knownTroopTypes.length * 35 : 0;
+
+  const duplicateTroopPenalty = [...troopCounts.entries()].reduce((sum, [troop, count]) => {
+    if (troop === "unknown") return sum;
+    return count > 3 ? sum + (count - 3) * 45 : sum;
+  }, 0);
+
+  const hasFrontlineCore = heroes.length < 2 || defenseTotal >= offenceTotal * 0.42;
+  const frontlinePenalty = hasFrontlineCore ? 0 : 160;
+
+  const hasDamageCore = heroes.length < 4 || offenceTotal >= defenseTotal * 0.3;
+  const damagePenalty = hasDamageCore ? 0 : 130;
+
+  const sustainToDefenseRatio = defenseTotal > 0 ? sustainTotal / defenseTotal : 0;
+  const sustainSupportBonus = sustainToDefenseRatio >= 0.18 ? Math.min(180, sustainTotal * 0.04) : 0;
+
+  const balancedCoreBonus =
+    offenceTotal > 0 && defenseTotal > 0 && sustainTotal > 0
+      ? Math.min(offenceTotal, defenseTotal, sustainTotal) * 0.035
+      : 0;
+
+  let modeBonus = 0;
+
+  if (mode === "pure_offence") {
+    modeBonus = offenceTotal * 0.035 - defenseTotal * 0.004;
+  } else if (mode === "pure_defense") {
+    modeBonus = defenseTotal * 0.035 + sustainTotal * 0.025 - offenceTotal * 0.004;
+  } else if (mode === "offence_leaning_sustain") {
+    modeBonus = offenceTotal * 0.025 + sustainTotal * 0.02;
+  } else if (mode === "defense_leaning_sustain") {
+    modeBonus = defenseTotal * 0.025 + sustainTotal * 0.025;
+  } else if (mode === "highest_total_power") {
+    modeBonus = powerTotal * 0.02;
+  } else {
+    modeBonus = balancedCoreBonus;
+  }
+
+  return (
+    troopDiversityBonus +
+    sustainSupportBonus +
+    balancedCoreBonus +
+    modeBonus -
+    duplicateTroopPenalty -
+    frontlinePenalty -
+    damagePenalty
+  );
+}
 function squadCandidateValue(
   currentSquad: HeroRosterEntry[],
   candidate: HeroRosterEntry,
@@ -292,6 +354,7 @@ function squadCandidateValue(
   const squadScore = scoreSquad(nextSquad, mode);
   const candidateScore = scoreHero(candidate);
   const contextValue = contextAdjustedHeroValue(candidate, context, mode);
+  const synergyValue = squadSynergyValue(nextSquad, mode);
 
   const troopTypes = new Set(
     nextSquad.map((h) => h.troop_type).filter(Boolean)
@@ -333,6 +396,7 @@ function squadCandidateValue(
   squadScore.total +
   candidateScore.total * 0.35 +
   contextValue +
+  synergyValue +
   troopDiversityBonus +
   sustainBonus -
   weakFrontlinePenalty -
