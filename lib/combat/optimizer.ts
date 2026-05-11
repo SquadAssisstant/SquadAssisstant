@@ -633,9 +633,41 @@ const scores = scoreSquad(squadHeroes, squadMode);
 ],
     });
   }
+let postPassUnused = heroes.filter((h) => !squads.some((s) => s.heroes.some((sh) => sh.hero_key === h.hero_key)));
 
-  const unused = heroes
-    .filter((h) => !used.has(h.hero_key))
+for (let i = 0; i < squads.length; i++) {
+  const squad = squads[i];
+  const squadMode = squadModes[squad.squad_number - 1] ?? mode;
+
+  const improved = improveSquadWithUnusedHeroes(
+    squad.heroes,
+    postPassUnused,
+    squadMode,
+    input.context
+  );
+
+  postPassUnused = improved.unused;
+
+  const placements = buildPlacements(improved.heroes, squadMode);
+  const gearAssignments = assignBestGearForSquad(improved.heroes, allOwnedGear, squadMode);
+  const scores = scoreSquad(improved.heroes, squadMode);
+
+  squads[i] = {
+    ...squad,
+    heroes: improved.heroes,
+    placements,
+    gear_assignments: gearAssignments,
+    scores,
+    explanation: [
+      `Squad ${squad.squad_number} was built using the ${squadMode} optimizer mode.`,
+      `A post-build swap pass checked unused heroes and kept only score-improving swaps.`,
+      ...squadExplanationDetails(improved.heroes, placements, squadMode),
+      ...improved.heroes.map((h) => heroReason(h, squadMode)),
+      `Gear assignment uses the best saved owned gear pool available across all heroes, not only currently equipped gear.`,
+    ],
+  };
+}
+  const unused = postPassUnused
     .map((h) => ({
       hero_key: h.hero_key,
       name: h.name,
