@@ -651,6 +651,43 @@ const [battleReportFileErr, setBattleReportFileErr] = useState<string | null>(nu
     return next;
   });
   }
+  function normalizeOptimizerModesForUi(value: unknown, fallback: OptimizerMode) {
+  const allowed = new Set(OPTIMIZER_MODE_OPTIONS.map((opt) => opt.value));
+
+  const raw = Array.isArray(value) ? value : [];
+  const cleaned = raw
+    .map((item) => String(item ?? "").trim())
+    .filter((item): item is OptimizerMode => allowed.has(item as OptimizerMode))
+    .slice(0, 4);
+
+  while (cleaned.length < 4) {
+    cleaned.push(fallback);
+  }
+
+  return cleaned;
+}
+
+function applyOptimizerFileToControls(saved: SavedOptimizerFile | null) {
+  if (!saved) return;
+
+  const nextMode = String(saved.mode || "balanced") as OptimizerMode;
+  const nextSquadCount = Math.max(1, Math.min(4, Number(saved.squad_count || 1)));
+
+  const resultSquadModes =
+    saved.result && Array.isArray((saved.result as any).squad_modes)
+      ? (saved.result as any).squad_modes
+      : saved.squad_modes;
+
+  const nextSquadModes = normalizeOptimizerModesForUi(
+    resultSquadModes,
+    nextMode
+  );
+
+  setOptimizerMode(nextMode);
+  setOptimizerSquadCount(nextSquadCount);
+  setOptimizerSquadModes(nextSquadModes);
+  setOptimizerLockedHeroes(Array.isArray(saved.locked_heroes) ? saved.locked_heroes : []);
+}
   const [optimizerLockedHeroes, setOptimizerLockedHeroes] = useState<string[]>([]);
   const [optimizerBusy, setOptimizerBusy] = useState(false);
   const [optimizerErr, setOptimizerErr] = useState<string | null>(null);
