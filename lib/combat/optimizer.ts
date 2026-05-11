@@ -498,6 +498,57 @@ function squadCandidateValue(
   lowDamagePenalty
 );
 }
+function optimizerParityAudit(context: PlayerCombatContext) {
+  const notes: string[] = [];
+
+  const hasHeroes = Array.isArray(context.heroes) && context.heroes.length > 0;
+  const hasDrone = !!(
+    context.drone?.profile ||
+    context.drone?.components ||
+    context.drone?.combat_boost ||
+    context.drone?.boost_chips
+  );
+  const hasOverlord = !!(
+    context.overlord?.profile ||
+    context.overlord?.skills ||
+    context.overlord?.promote ||
+    context.overlord?.bond ||
+    context.overlord?.train
+  );
+  const hasSharedModifiers = !!(
+    context.modifiers && Object.keys(context.modifiers).length > 0
+  );
+
+  if (hasHeroes) {
+    notes.push("Hero profile, gear, and skill context is available to optimizer.");
+  } else {
+    notes.push("Hero context is missing, so optimizer cannot match analyzer inputs.");
+  }
+
+  if (hasDrone) {
+    notes.push("Drone context is available and included through shared modifier weighting.");
+  } else {
+    notes.push("Drone context is missing or incomplete compared with battle analyzer expectations.");
+  }
+
+  if (hasOverlord) {
+    notes.push("Overlord context is available and included through shared modifier weighting.");
+  } else {
+    notes.push("Overlord context is missing or incomplete compared with battle analyzer expectations.");
+  }
+
+  if (hasSharedModifiers) {
+    notes.push("Shared combat modifiers are present and used by optimizer weighting.");
+  } else {
+    notes.push("Shared combat modifiers are not present, so optimizer relies on saved hero/drone/overlord data only.");
+  }
+
+  if (Array.isArray(context.shared_notes) && context.shared_notes.length) {
+    notes.push(...context.shared_notes.map((note) => `Shared note: ${note}`));
+  }
+
+  return notes;
+}
 export function runOptimizer(input: {
   context: PlayerCombatContext;
   mode?: string;
@@ -591,7 +642,7 @@ const scores = scoreSquad(squadHeroes, squadMode);
       reason:
         "Not selected because the current spread scored lower than the chosen roster under the active optimizer mode.",
     }));
-
+  const parityAudit = optimizerParityAudit(input.context);
   const assumptions: string[] = [];
   if (!input.context.drone || (!input.context.drone.components && !input.context.drone.combat_boost && !input.context.drone.boost_chips)) {
     assumptions.push("Drone data is incomplete, so optimizer weighted heroes and gear more heavily.");
@@ -613,10 +664,11 @@ const scores = scoreSquad(squadHeroes, squadMode);
     squads,
     unused_heroes: unused,
     summary: [
-      `Optimizer ran in ${mode} mode across ${squadCount} squad${squadCount === 1 ? "" : "s"}.`,
+  `Optimizer ran in ${mode} mode across ${squadCount} squad${squadCount === 1 ? "" : "s"}.`,
   `Full owned roster was used, not only heroes currently assigned to squads.`,
-`Saved drone, overlord, and shared combat modifiers were included in optimizer candidate weighting.`,
-    ],
+  `Saved drone, overlord, and shared combat modifiers were included in optimizer candidate weighting.`,
+  ...parityAudit,
+],
     assumptions,
     context_snapshot: {
       hero_count: heroes.length,
