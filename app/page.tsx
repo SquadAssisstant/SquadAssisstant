@@ -2431,36 +2431,6 @@ className={`overflow-hidden rounded-xl border ${
           </SectionCard>
 
           <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-  <SectionCard
-    title="Saved Report Files"
-    subtitle={`${battleReports.length} file${battleReports.length === 1 ? "" : "s"} saved`}
-  >
-    <div className="space-y-4">
-      <div className="grid gap-3">
-        {battleReports.map((report) => (
-          <button
-            key={report.id}
-            onClick={() => setSelectedBattleReportFileId(String(report.id))}
-            className={cx(
-              "rounded-2xl border p-3 text-left",
-              String(report.id) === selectedBattleReportFileId
-                ? "border-emerald-400/30 bg-emerald-500/10"
-                : "border-white/10 bg-black/20"
-            )}
-          >
-            <div className="text-sm font-medium text-white">Report #{report.id.slice(0, 8)}</div>
-            <div className="mt-1 text-xs text-white/45">
-              {report.battle_report_pages?.length ?? 0} page{(report.battle_report_pages?.length ?? 0) === 1 ? "" : "s"} • {fmtDate(report.created_at)}
-            </div>
-          </button>
-        ))}
-
-        {!battleReports.length ? (
-          <div className="text-sm text-white/50">No saved report files yet.</div>
-        ) : null}
-      </div>
-    </div>
-  </SectionCard>
 
             <SectionCard title="Analysis Output" subtitle={battleContextSummary || "Run the analyzer to load current context"}>
               <div className="space-y-4">
