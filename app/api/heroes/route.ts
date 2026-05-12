@@ -139,7 +139,7 @@ export async function GET(req: Request) {
 
     const hero = ensureHero(heroKey, heroName);
 
-    if (domain === "hero_profile") {
+    if (domain === "hero_profile" && !hero.completeness.has_profile) {
       hero.name = heroName || hero.name;
       hero.level = safeNum(v.level);
       hero.stars = safeNum(v.stars);
@@ -163,7 +163,7 @@ export async function GET(req: Request) {
       }
     }
 
-    if (domain === "hero_gear") {
+    if (domain === "hero_gear" && !hero.completeness.has_gear) {
       const pieces = v.pieces || v.gear || {};
       const normPiece = (raw: any, slot: "weapon" | "data_chip" | "armor" | "radar") =>
         raw
@@ -188,7 +188,7 @@ export async function GET(req: Request) {
       hero.completeness.has_gear = !!(hero.gear.weapon || hero.gear.data_chip || hero.gear.armor || hero.gear.radar);
     }
 
-    if (domain === "hero_skills") {
+    if (domain === "hero_skills" && !hero.completeness.has_skills) {
       const skillsRaw = Array.isArray(v.skills) ? v.skills : [];
       hero.skills = skillsRaw.map((raw: any, idx: number): HeroSkill => ({
         id: `${heroKey}:skill:${idx + 1}`,
