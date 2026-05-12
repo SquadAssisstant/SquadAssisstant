@@ -1390,7 +1390,9 @@ setBattleReasons(json?.reasons ?? []);
     setOptimizerChatAnswer("");
 
     try {
-      const res = await fetch("/api/optimizer", {
+  await loadHeroesRoster();
+
+  const res = await fetch("/api/optimizer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -1414,7 +1416,7 @@ locked_heroes: optimizerLockedHeroes,
     } finally {
       setOptimizerBusy(false);
     }
-  }, [optimizerLockedHeroes, optimizerMode, optimizerSquadCount, optimizerSquadModes]);
+  }, [loadHeroesRoster, optimizerLockedHeroes, optimizerMode, optimizerSquadCount, optimizerSquadModes]);
 
   const askOptimizer = useCallback(async () => {
     if (!optimizerQuestion.trim()) {
@@ -1692,15 +1694,16 @@ result: optimizerResult,
 />
 
       <HeroesModal
-        open={heroesOpen}
-        onClose={() => setHeroesOpen(false)}
-        onOpenHero={(uploadId) => {
-          if (!uploadId) return;
-          setSelectedHeroUploadId(uploadId);
-          setHeroSubModalTab("profile");
-          setHeroSubModalOpen(true);
-        }}
-      />
+  open={heroesOpen}
+  onClose={() => setHeroesOpen(false)}
+  onOpenHero={(uploadId) => {
+    if (!uploadId) return;
+    setSelectedHeroUploadId(uploadId);
+    setHeroSubModalTab("profile");
+    setHeroSubModalOpen(true);
+    void loadHeroesRoster();
+  }}
+/>
 
       <ModalShell
         title="Uploads"
@@ -1990,7 +1993,10 @@ className={`overflow-hidden rounded-xl border ${
       <ModalShell
         title="Hero Profile"
         subtitle={selectedHeroUpload ? `Hero upload #${selectedHeroUpload.id}` : "Hero submodal inside squads"}
-        onClose={() => setHeroSubModalOpen(false)}
+        onClose={() => {
+  setHeroSubModalOpen(false);
+  void loadHeroesRoster();
+}}
         open={heroSubModalOpen}
         wide
       >
