@@ -64,18 +64,10 @@ export async function GET(req: Request) {
     .select("id, domain, key, value, updated_at, created_at")
     .eq("created_by_profile_id", s.profileId)
     .in("domain", [
-      "hero_profile",
-      "hero_gear",
-      "hero_skills",
-      "drone_components",
-      "drone_combat_boost",
-      "drone_boost_chips",
-      "overlord_profile",
-      "overlord_skills",
-      "overlord_promote",
-      "overlord_bond",
-      "overlord_train",
-    ])
+  "hero_profile",
+  "hero_gear",
+  "hero_skills",
+])
     .order("updated_at", { ascending: false });
 
   if (factsRes.error) {
