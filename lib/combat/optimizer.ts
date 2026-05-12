@@ -634,6 +634,51 @@ function optimizerParityAudit(context: PlayerCombatContext) {
 
   return notes;
 }
+function unusedHeroReason(
+  hero: HeroRosterEntry,
+  selectedHeroes: HeroRosterEntry[],
+  mode: OptimizerMode
+) {
+  const heroScore = scoreHero(hero);
+  const selectedScores = selectedHeroes.map((h) => scoreHero(h));
+
+  const avgSelectedTotal =
+    selectedScores.length > 0
+      ? selectedScores.reduce((sum, s) => sum + s.total, 0) / selectedScores.length
+      : 0;
+
+  const selectedTroopCount = selectedHeroes.filter(
+    (h) =>
+      String(h.troop_type || "").toLowerCase() ===
+      String(hero.troop_type || "").toLowerCase()
+  ).length;
+
+  if (heroScore.total < avgSelectedTotal * 0.75) {
+    return "Not selected because its total combat value was significantly lower than the chosen squad spread.";
+  }
+
+  if (mode === "pure_offence" && heroScore.offence < heroScore.defense * 0.65) {
+    return "Not selected because this mode favored offence and this hero leaned too defensive.";
+  }
+
+  if (mode === "pure_defense" && heroScore.defense + heroScore.sustain < heroScore.offence * 0.85) {
+    return "Not selected because this mode favored defense/sustain and this hero leaned too offensive.";
+  }
+
+  if (selectedTroopCount >= 3) {
+    return "Not selected because the optimized spread already had enough heroes of this troop type.";
+  }
+
+  if (!hero.completeness?.has_gear) {
+    return "Not selected because stronger candidates had more complete saved gear data.";
+  }
+
+  if (!hero.completeness?.has_skills) {
+    return "Not selected because stronger candidates had more complete saved skill data.";
+  }
+
+  return "Not selected because swap testing found no score-improving place for this hero in the optimized squads.";
+}
 export function runOptimizer(input: {
   context: PlayerCombatContext;
   mode?: string;
@@ -752,13 +797,14 @@ for (let i = 0; i < squads.length; i++) {
     ],
   };
 }
-  const unused = postPassUnused
-    .map((h) => ({
-      hero_key: h.hero_key,
-      name: h.name,
-      reason:
-        "Not selected because the current spread scored lower than the chosen roster under the active optimizer mode.",
-    }));
+  const selectedHeroes = squads.flatMap((s) => s.heroes);
+
+const unused = postPassUnused
+  .map((h) => ({
+    hero_key: h.hero_key,
+    name: h.name,
+    reason: unusedHeroReason(h, selectedHeroes, mode),
+  }));
   const parityAudit = optimizerParityAudit(input.context);
   const assumptions: string[] = [];
   if (!input.context.drone || (!input.context.drone.components && !input.context.drone.combat_boost && !input.context.drone.boost_chips)) {
