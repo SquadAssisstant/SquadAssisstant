@@ -1634,6 +1634,14 @@ result: optimizerResult,
       setOptimizerSavedDetail(null);
     }
   }, [loadOptimizerSavedDetail, selectedOptimizerSavedId]);
+  useEffect(() => {
+  if (optimizerSavedDetail) {
+    applyOptimizerFileToControls(optimizerSavedDetail);
+    setOptimizerResult(optimizerSavedDetail.result ?? null);
+    setOptimizerChatAnswer("");
+    setOptimizerErr(null);
+  }
+}, [optimizerSavedDetail]);
 
   const handleLogout = useCallback(async () => {
   try {
