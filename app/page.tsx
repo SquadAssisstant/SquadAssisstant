@@ -2349,16 +2349,31 @@ className={`overflow-hidden rounded-xl border ${
     </select>
 
     {selectedBattleReportFile ? (
-      <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-        <div className="text-xs uppercase tracking-[0.25em] text-white/45">
-          Pick Your Side
-        </div>
+  <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="text-xs uppercase tracking-[0.25em] text-white/45">
+      Pick Your Side
+    </div>
 
-        <div className="mt-2 text-sm text-white/60">
-          Choose which side is yours.
-        </div>
+    <div className="mt-2 text-sm text-white/60">
+      Use the report preview to identify whether your side is left or right.
+    </div>
 
-        <div className="mt-4 flex gap-2">
+    {selectedBattleReportFile.battle_report_pages?.[0]?.url ? (
+      <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={selectedBattleReportFile.battle_report_pages[0].url ?? ""}
+          alt="Selected battle report preview"
+          className="max-h-[70vh] w-full object-contain"
+        />
+      </div>
+    ) : (
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/45">
+        No preview image found for this report.
+      </div>
+    )}
+
+    <div className="mt-4 flex gap-2">
           <button
             type="button"
             onClick={() => void saveBattleReportSide("left")}
