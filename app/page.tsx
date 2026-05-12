@@ -2430,7 +2430,7 @@ className={`overflow-hidden rounded-xl border ${
             </div>
           </SectionCard>
 
-          <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="grid gap-6">
 
             <SectionCard title="Analysis Output" subtitle={battleContextSummary || "Run the analyzer to load current context"}>
               <div className="space-y-4">
