@@ -48,8 +48,7 @@ export function MainChat({
     {
       id: "welcome",
       role: "assistant",
-      text:
-        "Main Chat is your central advisor. I can explain your saved data, help you choose the right optimizer settings, continue confusing analyzer or optimizer conversations, and learn from screenshots, downloaded images, and links without saving or exposing player, server, or alliance identifiers.",
+      text: "Main Chat can explain how to use the site, review uploaded game screenshots or links, discuss saved hero/squad/drone/overlord data, and help you understand Battle Analyzer or Optimizer results in plain English. It does not handle app troubleshooting or debugging.",
     },
   ]);
 
