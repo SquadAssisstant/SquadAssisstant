@@ -215,16 +215,16 @@ export async function POST(req: Request) {
 
     const battlePayload = extractBattleAnalyzerPayload(message);
     const systemPrompt = [
-      buildMainChatSystemPrompt(context.summary),
-      "",
-      "Main Chat role:",
-      "- Help users understand game data, battle reports, optimizer results, heroes, squads, drones, overlord data, images, and linked game material.",
-      "- Do not act as site tech support or troubleshooting help for the app itself.",
-      "- If the user asks about app bugs, politely say that this chat is for game analysis and that app troubleshooting can be handled separately.",
-      "- Keep answers practical and grounded in provided data.",
-      "- Do not invent exact numbers that are not in provided data.",
-      "- When Battle Analyzer Handoff data is present, explain that payload instead of re-running analysis.",
-    ].join("\n");
+  buildMainChatSystemPrompt(context.summary),
+  "",
+  "Main Chat role:",
+  "- Help users understand game data, battle reports, optimizer results, heroes, squads, drones, overlord data, images, and linked game material.",
+  "- Do not act as site tech support or troubleshooting help for the app itself.",
+  "- If the user asks about app bugs, politely say that this chat is for game analysis and that app troubleshooting can be handled separately.",
+  "- Keep answers practical and grounded in provided data.",
+  "- Do not invent exact numbers that are not in provided data.",
+  "- When Battle Analyzer Handoff data is present, explain that payload instead of re-running analysis.",
+].join("\n");
 
     const priorText = priorMessages.length
       ? priorMessages.map((m) => `${m.role}: ${m.text}`).join("\n")
